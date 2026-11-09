@@ -172,5 +172,9 @@ const Native = (() => {
     return 'saved';
   }
 
-  return { isNative, vibrate, say, hush, saveFile, fullUuid, hexToDv, toHex, hasTTS: () => !!TTS || 'speechSynthesis' in window };
+  /* ---------- Статус-бар под тему ---------- */
+  const SB = P('StatusBar');
+  function statusBar(dark, color) { if (!SB) return; SB.setStyle({ style: dark ? 'DARK' : 'LIGHT' }).catch(() => { }); SB.setBackgroundColor?.({ color }).catch(() => { }); }
+
+  return { isNative, statusBar, vibrate, say, hush, saveFile, fullUuid, hexToDv, toHex, hasTTS: () => !!TTS || 'speechSynthesis' in window };
 })();

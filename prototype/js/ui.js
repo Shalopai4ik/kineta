@@ -18,6 +18,7 @@ const MISSIONS = [
   { id: 'combo15', t: 'Комбо ×15 в «Ритм-пульсе»', n: 1, ev: 'rhythm:combo15', ic: 'music' },
   { id: 'fish3', t: 'Поймай 3 рыбы', n: 3, ev: 'fish:catch', ic: 'fish' },
   { id: 'mug3', t: 'Донеси 3 кружки, не пролив', n: 3, ev: 'mug:deliver', ic: 'cup' },
+  { id: 'blind8', t: 'Выполни 8 команд в игре «Без экрана»', n: 8, ev: 'blind:ok', ic: 'ear' },
   { id: 'react', t: 'Средняя реакция быстрее 450 мс', n: 1, ev: 'react:fast', ic: 'bolt' },
   { id: 'race1k', t: 'Проедь 1000 м без аварий', n: 1, ev: 'race:clean1k', ic: 'car' }
 ];
@@ -34,7 +35,7 @@ const Mission = {
     S.missions.list.forEach(m => {
       const def = MISSIONS.find(x => x.id === m.id); if (!def || m.done || def.ev !== type) return;
       m.p = Math.min(def.n, m.p + k);
-      if (m.p >= def.n) { m.done = true; addXP(60); reward('target', 'Миссия выполнена', def.t + ' · +60 XP', 60); }
+      if (m.p >= def.n) { m.done = true; addXP(60); reward('target', 'Миссия выполнена', def.t + ' · +60 XP', 60); Workshop.add('миссия дня'); }
     });
     save();
   }
@@ -217,7 +218,7 @@ function skills(fromDaysAgo = 0) {
     { k: 'acc', label: 'Точность', value: clamp(acc / 100), game: 'race' },
     { k: 'rt', label: 'Реакция', value: clamp((900 - rt) / 600), game: 'react' },
     { k: 'force', label: 'Сила', value: clamp((avg([...of('fish'), ...of('mug')], h => h.acc) ?? acc * .85) / 100), game: of('mug').length <= of('fish').length ? 'mug' : 'fish' },
-    { k: 'timing', label: 'Тайминг', value: clamp((avg([...of('rhythm'), ...of('flap')], h => h.acc) ?? acc * .8) / 100), game: 'rhythm' }
+    { k: 'timing', label: 'Тайминг', value: clamp((avg([...of('rhythm'), ...of('flap'), ...of('blind')], h => h.acc) ?? acc * .8) / 100), game: of('blind').length < of('rhythm').length ? 'blind' : 'rhythm' }
   ];
 }
 
@@ -229,7 +230,7 @@ const Voice = {
   last: 0,
   speakable: s => String(s).replace(/\(?К1\)?/g, 'ка один').replace(/\(?К2\)?/g, 'ка два').replace(/[«»!…]/g, '').replace(/\s+—\s+/g, ', ').trim(),
   hint([text, kind], game) {
-    if (!C().voice || !text || game === 'react') return;
+    if (!C().voice || !text || game === 'react' || game === 'blind') return;
     const now = performance.now(), urgent = kind === 'act';
     if (!(urgent || kind === 'warn' || game === 'school')) return;
     if (!urgent && now - this.last < 2000) return;
@@ -237,6 +238,88 @@ const Voice = {
   }
 };
 Bus.on('signal:lost', () => C().voice && Native.say('Сигнал потерян', { force: true }));
+
+/* ---------------- Мастерская: робот собирается из деталей за миссии и испытание недели ----------------
+   Долгая цель поверх ежедневных: 8 деталей — робот готов, начинается следующий. */
+const ROBOTS = ['Кинетик', 'Шестерёнка', 'Искорка', 'Болтик', 'Пружинка', 'Магнитик'];
+const PARTS = ['Ноги', 'Корпус', 'Левая рука', 'Правая рука', 'Голова', 'Антенна', 'Глаза', 'Сердце'];
+const Workshop = {
+  get w() { const w = S.workshop ||= { parts: 0, built: 0, log: [] }; w.log ||= []; return w; },
+  name(off = 0) { return ROBOTS[(this.w.built + off) % ROBOTS.length]; },
+  add(why) {
+    const w = this.w; w.parts++; w.log.push({ t: Date.now(), why, part: PARTS[w.parts - 1] }); if (w.log.length > 60) w.log.shift();
+    if (w.parts >= PARTS.length) { const n = this.name(); w.parts = 0; w.built++; addXP(100); reward('robot', `Робот «${n}» собран!`, '+100 XP · следующий уже ждёт детали', 120); }
+    else reward('robot', 'Деталь для мастерской: ' + PARTS[w.parts - 1].toLowerCase(), `${w.parts} из ${PARTS.length} · за ${why}`, 30);
+    save();
+  }
+};
+function robotSVG(n, size = 120) {
+  const f = (i, col) => i < n ? col : 'none', d = i => i < n ? '' : ' stroke-dasharray="4 4" opacity=".5"';
+  return `<svg class="robot" viewBox="0 0 120 140" width="${size}" height="${Math.round(size * 140 / 120)}" fill="none" stroke="var(--muted)" stroke-width="2" aria-label="Робот: ${n} из ${PARTS.length} деталей">
+    <rect x="40" y="108" width="14" height="26" rx="5" fill="${f(0, 'var(--s2)')}"${d(0)}/><rect x="66" y="108" width="14" height="26" rx="5" fill="${f(0, 'var(--s2)')}"${d(0)}/>
+    <rect x="32" y="62" width="56" height="48" rx="14" fill="${f(1, 'var(--s1)')}"${d(1)}/>
+    <rect x="12" y="66" width="16" height="36" rx="8" fill="${f(2, 'var(--s3)')}"${d(2)}/><rect x="92" y="66" width="16" height="36" rx="8" fill="${f(3, 'var(--s3)')}"${d(3)}/>
+    <rect x="36" y="20" width="48" height="38" rx="12" fill="${f(4, 'var(--s4)')}"${d(4)}/>
+    <path d="M60 20V9"${d(5)}/><circle cx="60" cy="7" r="4" fill="${f(5, 'var(--s5)')}"${d(5)}/>
+    <circle cx="50" cy="38" r="5" fill="${f(6, '#fff')}"${d(6)}/><circle cx="70" cy="38" r="5" fill="${f(6, '#fff')}"${d(6)}/>
+    <path d="M60 80c-4-5-11-1-8 4l8 7 8-7c3-5-4-9-8-4z" fill="${f(7, '#EE5D5D')}"${d(7)}/></svg>`;
+}
+function workshopSheet() {
+  const w = Workshop.w;
+  sheet(`<h2 style="margin-top:0">Мастерская</h2><div style="display:grid;place-items:center;margin:6px 0 10px">${robotSVG(w.parts, 150)}</div>
+    <p class="sub" style="text-align:center;margin:0">Робот «${Workshop.name()}» · ${w.parts} из ${PARTS.length} деталей${w.built ? ` · уже собрано: ${w.built}` : ''}</p>
+    <div class="note">${ic('target')}<span>Деталь дают за каждую выполненную миссию дня и за испытание недели. Восемь деталей — робот готов и +100 XP.</span></div>
+    <h3 class="h3">Детали</h3><div class="wparts">${PARTS.map((p, i) => `<span class="${i < w.parts ? 'on' : ''}">${i < w.parts ? ic('check') : ''}${p}</span>`).join('')}</div>
+    ${w.log.length ? `<h3 class="h3">Последние</h3><div class="list">${w.log.slice(-4).reverse().map(x => `<div class="lrow">${badge('robot', 'lilac')}<div><b>${esc(x.part || 'Деталь')}</b><small>${new Date(x.t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · за ${esc(x.why)}</small></div></div>`).join('')}</div>` : ''}`);
+}
+
+/* ---------------- Испытание недели: одна игра и уровень на всю неделю, цель по точности ----------------
+   Таблица — попытки этого пользователя за неделю (общей таблицы без сервера нет). */
+const weekKey = (d = new Date()) => { const x = new Date(d); x.setHours(12, 0, 0, 0); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return dayKey(x); };
+function weeklyDef(k = weekKey()) {
+  let h = 7; for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const a = ARCADE().filter(id => id !== 'blind'); return { k, id: a[h % a.length], lv: 2 + ((h >>> 5) % 2), acc: 70 + ((h >>> 9) % 3) * 5 };
+}
+const Weekly = {
+  cur() { const d = weeklyDef(), w = S.weekly[d.k] ||= { tries: [], done: false }; return { ...d, w }; },
+  record(id, lv, r) {
+    const c = this.cur(); if (id !== c.id) return null;
+    c.w.tries.push({ t: Date.now(), score: r.score, acc: Math.round(r.acc * 100), win: r.win !== false }); if (c.w.tries.length > 40) c.w.tries.shift();
+    let just = false; if (!c.w.done && r.win !== false && r.acc * 100 >= c.acc && lv >= c.lv) { c.w.done = true; just = true; addXP(150); Workshop.add('испытание недели'); }
+    const keys = Object.keys(S.weekly).sort(); if (keys.length > 12) delete S.weekly[keys[0]];
+    save(); return { just, done: c.w.done };
+  },
+  streak() { let n = 0, d = new Date(); for (;;) { const w = S.weekly[weekKey(d)]; if (!w?.done) { if (n === 0 && d.getTime() > Date.now() - 864e5) { d = addDays(d, -7); continue; } break; } n++; d = addDays(d, -7); } return n; }
+};
+function weeklySheet() {
+  const c = Weekly.cur(), g = GAMES[c.id], best = [...c.w.tries].sort((a, b) => b.score - a.score).slice(0, 5), end = addDays(new Date(c.k), 6);
+  sheet(`<div class="sh-head">${badge('calendar', 'lilac', 'lg')}<div><h2 style="margin:0">Испытание недели</h2><small class="muted">до ${end.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</small></div></div>
+    <div class="note" style="margin-top:12px">${gIcon(c.id)}<span>Пройди «${g.t}» на уровне ${c.lv} с точностью от ${c.acc}%. Награда: +150 XP и деталь для мастерской.</span></div>
+    ${c.w.done ? `<div class="note ok">${ic('check')}<span><b>Выполнено.</b> Можно улучшать результат — таблица ниже.</span></div>` : ''}
+    <h3 class="h3">Мои попытки за неделю</h3>
+    ${best.length ? `<div class="card" style="padding:4px 14px">${best.map((x, i) => `<div class="kv"><span class="l">${i + 1}. ${new Date(x.t).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric' })}${x.win ? '' : ' · не пройден'}</span><b>${fmtN(x.score)} · ${x.acc}%</b></div>`).join('')}</div>` : '<p class="sub">Попыток пока нет.</p>'}
+    <p class="sub small" style="margin-top:8px">Недель подряд с выполненным испытанием: ${Weekly.streak()}</p>
+    <button class="btn" id="wGo" style="margin-top:14px">${ic('play')} Играть · уровень ${c.lv}</button>`, (sh, close) => {
+    $('#wGo', sh).onclick = () => { if (sh._closing) return; close(); App.go('play', { id: c.id, diff: c.lv, weekly: true }); };
+  });
+}
+
+/* ---------------- Карта игры: когда работали К1/К2 и где включалась мышца-антагонист ---------------- */
+function gameMap(tl) {
+  const n = tl.length; if (n < 10) return '';
+  const W = 600, w = W / n; let bars = '', marks = '', ep = 0, first = null, prev = false;
+  tl.forEach((c, i) => {
+    const st = c & 3, lk = c >= 4, x = (i * w).toFixed(2), ww = (w + .4).toFixed(2);
+    if (st) bars += `<rect x="${x}" y="4" width="${ww}" height="26" fill="${['', 'var(--ch1)', 'var(--ch2)', 'var(--both)'][st]}"/>`;
+    if (lk) { marks += `<rect x="${x}" y="36" width="${ww}" height="12" fill="#EE5D5D"/>`; if (!prev) { ep++; if (first == null) first = i * .2; } }
+    prev = lk;
+  });
+  const dur = n * .2;
+  return `<div class="card emap"><div class="between"><b>Карта игры</b><small class="muted">${fmtTime(dur)}</small></div>
+    <svg viewBox="0 0 ${W} 52" preserveAspectRatio="none" role="img" aria-label="Карта активности каналов во времени"><rect x="0" y="4" width="${W}" height="26" fill="var(--line)" opacity=".45"/>${bars}<rect x="0" y="36" width="${W}" height="12" fill="var(--line)" opacity=".3"/>${marks}</svg>
+    <div class="legend"><span><i style="background:var(--ch1)"></i>К1</span><span><i style="background:var(--ch2)"></i>К2</span><span><i style="background:var(--both)"></i>обе</span><span><i style="background:#EE5D5D"></i>встречное сокращение</span></div>
+    <p class="sub small" style="margin:6px 0 0">${ep ? `Мышца-антагонист включалась ${plur(ep, 'раз', 'раза', 'раз')}, впервые на ${fmtTime(first)}. Красные отрезки — где держать вторую мышцу расслабленной.` : 'Встречных сокращений не было — каналы работали раздельно.'}</p></div>`;
+}
 
 /* =====================================================================
    РОУТЕР
@@ -455,7 +538,9 @@ SCR.home = {
     </div>
     <h2>Миссии дня <span class="tag soft">${S.missions.list.filter(m => m.done).length}/3 · +60 XP</span></h2>
     <div class="list">${S.missions.list.map((m, i) => { const def = MISSIONS.find(x => x.id === m.id); return `<div class="lrow mission ${m.done ? 'done' : ''}">${badge(m.done ? 'check' : def.ic, m.done ? 'mint' : ['peach', 'sky', 'lilac'][i])}<div><b>${def.t}</b><div class="pbar"><i data-w="${m.p / def.n * 100}%" style="width:0"></i></div></div><span class="mx">${m.done ? 'готово' : m.p + '/' + def.n}</span></div>`; }).join('')}</div>
-    <p class="sub small" style="margin:8px 4px 0">Новые миссии появляются каждый день.</p>
+    <p class="sub small" style="margin:8px 4px 0">Новые миссии появляются каждый день. Каждая выполненная — деталь для мастерской.</p>
+    <h2>Мастерская</h2>
+    <button class="card wshop" data-ws="1">${robotSVG(Workshop.w.parts, 64)}<div class="grow"><b>Робот «${Workshop.name()}»</b><small>${Workshop.w.parts} из ${PARTS.length} деталей${Workshop.w.built ? ` · собрано роботов: ${Workshop.w.built}` : ''}</small><div class="pbar"><i style="width:${Workshop.w.parts / PARTS.length * 100}%"></i></div></div><span class="chev">${ic('chev')}</span></button>
     <h2>Быстрые действия</h2>
     <div class="qa">
       <button data-go="calib">${badge('calib', 'peach')}<b>Калибровка</b><small>${S.calib.done ? 'обновить' : 'не пройдена'}</small></button>
@@ -470,7 +555,7 @@ SCR.home = {
     $('#hRot', el).addEventListener('click', e => { const b = e.target.closest('[data-g]'); if (!b) return; Prosthesis.setActive(b.dataset.g); });
     this.off = [Bus.on('gesture', id => { $('#hName', el).textContent = G(id).name; $$('#hRot .chipbtn', el).forEach(b => b.classList.toggle('on', b.dataset.g === id)); const n = $('#hName', el); n.style.animation = 'none'; n.offsetWidth; n.style.animation = 'fadeUp .4s both'; }),
     Bus.on('gesture:count', () => { const a = $('#hActs', el); if (a) a.textContent = fmtN(today().acts); })];
-    el.addEventListener('click', e => { const p = e.target.closest('[data-play]'); if (p) openGame(p.dataset.play, !!p.dataset.daily); });
+    el.addEventListener('click', e => { if (e.target.closest('[data-ws]')) return workshopSheet(); if (e.target.closest('[data-weekly]')) return weeklySheet(); const p = e.target.closest('[data-play]'); if (p) openGame(p.dataset.play, !!p.dataset.daily); });
   },
   unmount() { this.off?.forEach(f => f()); },
   frame(dt, now, el) {
@@ -731,6 +816,7 @@ SCR.sensors = {
       <h2>Профиль комфорта <small class="h2s">пороги + сглаживание</small></h2>
       <div class="presets" id="sPre">${Object.entries(PRESETS).map(([k, p]) => `<button data-p="${k}" class="${c.preset === k ? 'on' : ''}">${ic(p.e)}${p.n}<small class="muted" style="font-size:10.5px;font-weight:600">${p.d}</small></button>`).join('')}</div>
       <h2>Калибровка</h2>
+      <button class="card set tap" data-go="signal" style="width:100%;text-align:left;padding:14px 16px;margin-bottom:10px"><div class="ico">${ic('flow')}</div><div style="flex:1">Как работает сигнал<small>Сырой сигнал → сглаживание → порог → состояние, задержка вживую</small></div><span class="chev">${ic('chev')}</span></button>
       <button class="card set tap" data-go="calib" style="width:100%;text-align:left;padding:14px 16px"><div class="ico">${ic('calib')}</div><div style="flex:1">${S.calib.done ? 'Откалибровано' : 'Не откалибровано'}<small>${S.calib.done ? 'Последняя: ' + new Date(S.calib.at).toLocaleDateString('ru-RU') + ' · пройти заново' : 'Измерим покой и максимальное усилие мышц'}</small></div><span class="chev">${ic('chev')}</span></button>
       <h2>Тонкая настройка <button class="lnk" id="advT">Показать</button></h2>
       <div class="card hidden" id="adv">
@@ -877,6 +963,9 @@ const dailyAvail = () => S.dailyDone !== dayKey();
 const dailyGame = () => { const d = new Date(), a = ARCADE(); return a[(d.getDate() + d.getMonth()) % a.length]; };
 function gst(id) { const s = S.games[id] ||= { best: 0, plays: 0, stars: 0 }; if (!s.ls) s.ls = [s.stars || 0, 0, 0]; return s; }
 const unlockedLv = id => { const s = gst(id); let n = 1; while (n < 3 && s.ls[n - 1] >= 1) n++; return n; };
+/* бесконечный режим открывается после прохождения уровня 3; сложность подстраивается после каждой игры (2…4.5) */
+const endlessOpen = id => gst(id).ls[2] >= 1;
+const adaptOf = id => clamp(gst(id).adapt ?? 3, 2, 4.5);
 const totalStars = () => ARCADE().reduce((a, id) => a + gst(id).ls.reduce((x, y) => x + y, 0), 0);
 const lvlBars = id => { const s = gst(id), u = unlockedLv(id); return `<div class="lvls">${[0, 1, 2].map(i => `<i class="${s.ls[i] >= 1 ? 'on' : i === u - 1 ? 'cur' : ''}"></i>`).join('')}</div>`; };
 /* рекорд: из сохранённой статистики игры и из истории (включая демо-историю первого запуска) */
@@ -897,31 +986,35 @@ SCR.games = {
         <div class="skl">${sk.map(s => `<span title="${s.label}: ${Math.round(s.value * 100)}%"><b class="skv">${Math.round(s.value * 100)}</b><i style="height:${Math.round(4 + clamp((s.value - .3) / .7) * 22)}px"></i><em>${s.label.slice(0, 4)}</em></span>`).join('')}</div></div></div>
       <div class="list" style="margin-top:12px">
         <button class="lrow" data-play="school">${gIcon('school')}<div><b>Школа управления</b><small>Режим обучения · 7 упражнений</small></div>${sch.plays ? `<span class="tag ok">${ic('check')}</span>` : '<span class="tag soft">начни здесь</span>'}</button>
+        ${(c => `<button class="lrow" data-weekly="1">${badge('calendar', 'lilac')}<div><b>Испытание недели · ${GAMES[c.id].t}</b><small>${c.w.done ? 'Выполнено · можно улучшать результат' : `Уровень ${c.lv}, точность от ${c.acc}% · +150 XP и деталь`}</small></div>${c.w.done ? `<span class="tag ok">${ic('check')}</span>` : '<span class="tag soft">неделя</span>'}</button>`)(Weekly.cur())}
         <button class="lrow" data-play="${daily}" data-daily="1">${gIcon(daily)}<div><b>Испытание дня · ${DG.t}</b><small>${dailyAvail() ? 'Двойной опыт за прохождение' : 'Выполнено сегодня — завтра новое'}</small></div>${dailyAvail() ? '<span class="tag soft">×2 XP</span>' : `<span class="tag ok">${ic('check')}</span>`}</button>
       </div>
-      <h2>Мини-игры <small class="h2s">3 уровня, следующий — за ★</small></h2>
+      <h2>Мини-игры <small class="h2s">3 уровня и бесконечный режим</small></h2>
       <div class="games-list stg">${ARCADE().map(id => { const g = GAMES[id], s = gst(id), st = s.ls.reduce((a, b) => a + b, 0), u = unlockedLv(id), best = bestScore(id); return `<button class="game-card" data-play="${id}"><div class="gc-prev"><canvas data-prev="${id}"></canvas><span class="gc-lv">Уровень ${u}${s.ls[2] >= 1 ? ' · пройдено' : ''}</span></div>
         <div class="gc-body">${gIcon(id)}<div class="gc-txt"><b>${g.t}</b><small>${g.skill}</small></div>
         <div class="gc-meta">${lvlBars(id)}<span>★ ${st}/9</span></div></div>
         <div class="gc-foot"><span>${ic('trophy')} ${best ? fmtN(best) : 'нет рекорда'}</span><span>${ic('play')} ${playsOf(id) ? plur(playsOf(id), 'игра', 'игры', 'игр') : 'ещё не играли'}</span><span class="gc-go">Играть ${ic('chev')}</span></div></button>`; }).join('')}</div>
       <div class="note">${ic('info')}<span>Сложность подстраивается: очень чистая игра сразу открывает следующий уровень, при точности ниже 45% приложение предложит уровень проще. После 12 минут — пауза на отдых.</span></div>`;
   },
-  mount(el) { el.addEventListener('click', e => { const p = e.target.closest('[data-play]'); if (p) openGame(p.dataset.play, !!p.dataset.daily); }); },
+  mount(el) { el.addEventListener('click', e => { if (e.target.closest('[data-weekly]')) return weeklySheet(); const p = e.target.closest('[data-play]'); if (p) openGame(p.dataset.play, !!p.dataset.daily); }); },
   frame(dt, now, el) { $$('canvas[data-prev]', el).forEach(cv => { const r = cv.getBoundingClientRect(); if (r.bottom > 0 && r.top < innerHeight) paintPreview(cv, now); }); }
 };
 function openGame(id, daily) {
   const g = GAMES[id], s = gst(id);
   if (g.tut) { App.go('play', { id, diff: 1 }); return; }
-  const U = unlockedLv(id); let lv = clamp(s.diff || U, 1, U);
+  const U = unlockedLv(id); let lv = clamp(Math.round(s.diff || U), 1, U);
   sheet(`<div class="sh-head">${gIcon(id, 'lg')}<div><h2 style="margin:0">${g.t}</h2><small class="muted">${g.skill}</small></div></div>
     <p class="sub" style="margin:12px 0">${g.d}</p>
-    <div class="lvl-pick" id="lvP">${[1, 2, 3].map(n => `<button data-l="${n}" class="${n === lv ? 'on' : ''} ${n > U ? 'lock' : ''}"><small>уровень</small><b>${n}</b><span class="st">${n > U ? ic('shield') : starStr(s.ls[n - 1])}</span></button>`).join('')}</div>
+    <div class="lvl-pick" id="lvP">${[1, 2, 3].map(n => `<button data-l="${n}" class="${n === lv ? 'on' : ''} ${n > U ? 'lock' : ''}"><small>уровень</small><b>${n}</b><span class="st">${n > U ? ic('shield') : starStr(s.ls[n - 1])}</span></button>`).join('')}<button data-l="4" class="${endlessOpen(id) ? '' : 'lock'}"><small>бесконечный</small><b>∞</b><span class="st" style="color:var(--muted);letter-spacing:0">${endlessOpen(id) ? 'сложн. ' + adaptOf(id).toFixed(1) : ic('shield')}</span></button></div>
     <div class="note">${ic('target')}<span id="lvGoal">${g.goal(lv)}</span></div>
     <h3 class="h3">Управление</h3>${ctlList(g)}
     ${s.best ? `<div class="between small muted" style="margin-top:12px;font-weight:700"><span>Рекорд: ${fmtN(s.best)}</span><span>Сыграно: ${s.plays}</span></div>` : ''}
     <button class="btn" id="gGo" style="margin-top:16px">${ic('play')} Играть · уровень <span id="lvN">${lv}</span></button>`, (sh, close) => {
-    $('#lvP', sh).onclick = e => { const b = e.target.closest('[data-l]'); if (!b) return; const n = +b.dataset.l; if (n > U) { toast('shield', 'Уровень закрыт', `Пройди уровень ${n - 1} хотя бы на одну звезду`); return; } lv = n; $$('#lvP button', sh).forEach(x => x.classList.toggle('on', x === b)); $('#lvGoal', sh).textContent = g.goal(lv); $('#lvN', sh).textContent = lv; Snd.tick(); };
-    $('#gGo', sh).onclick = () => { if (sh._closing) return; close(); s.diff = lv; save(); App.go('play', { id, diff: lv, daily }); };
+    $('#lvP', sh).onclick = e => { const b = e.target.closest('[data-l]'); if (!b) return; const n = +b.dataset.l;
+      if (n === 4 && !endlessOpen(id)) { toast('shield', 'Бесконечный режим закрыт', 'Пройди уровень 3 хотя бы на одну звезду'); return; }
+      if (n < 4 && n > U) { toast('shield', 'Уровень закрыт', `Пройди уровень ${n - 1} хотя бы на одну звезду`); return; }
+      lv = n; $$('#lvP button', sh).forEach(x => x.classList.toggle('on', x === b)); $('#lvGoal', sh).textContent = n === 4 ? 'Без конца уровней: сложность растёт после чистой игры и снижается после трудной. Сейчас — ' + adaptOf(id).toFixed(1) + ' · ' + g.goal(adaptOf(id)) : g.goal(lv); $('#lvN', sh).textContent = n === 4 ? '∞' : lv; Snd.tick(); };
+    $('#gGo', sh).onclick = () => { if (sh._closing) return; close(); if (lv === 4) { App.go('play', { id, diff: adaptOf(id), endless: true, daily }); return; } s.diff = lv; save(); App.go('play', { id, diff: lv, daily }); };
   }, { onClose: () => { } });
 }
 
@@ -929,12 +1022,12 @@ function openGame(id, daily) {
 SCR.play = {
   full: true, noEmu: true,
   render(p) {
-    const g = GAMES[p.id], lv = p.diff || 1;
-    return `<div class="ghud"><button class="ib" id="gP">${ic('pause')}</button><div class="gt"><b>${g.t}</b><small>${g.tut ? 'Режим обучения' : 'Уровень ' + lv}</small></div><div class="gs"><b id="gScore">0</b><small id="gTime"></small></div></div>
+    const g = GAMES[p.id], lv = p.diff || 1, lvT = p.endless ? 'Бесконечный · ' + lv.toFixed(1) : 'Уровень ' + lv;
+    return `<div class="ghud"><button class="ib" id="gP">${ic('pause')}</button><div class="gt"><b>${g.t}</b><small>${g.tut ? 'Режим обучения' : lvT}</small></div><div class="gs"><b id="gScore">0</b><small id="gTime"></small></div></div>
       <div class="gprog"><i id="gProg"></i></div>
       <div class="ginfo" id="gChips"></div>
       <div class="gwrap"><canvas id="gc"></canvas><div class="countdown" id="gCd"></div>
-        <div class="intro" id="gIntro"><div class="ic">${gIcon(p.id, 'lg')}<h3>${g.t}${g.tut ? '' : ' · уровень ' + lv}</h3><p>${g.goal(lv)}</p>
+        <div class="intro" id="gIntro"><div class="ic">${gIcon(p.id, 'lg')}<h3>${g.t}${g.tut ? '' : p.endless ? ' · бесконечный' : ' · уровень ' + lv}</h3><p>${g.goal(lv)}</p>
           ${ctlList(g)}
           <button class="btn sm" id="gStart">${ic('play')} Старт</button><div class="sq"><i id="gSq"></i></div><div class="hint">или сожми К1 и подержи секунду</div></div></div></div>
       <div class="ghint" id="gHint"></div>
@@ -943,7 +1036,7 @@ SCR.play = {
         <div class="pad c2 m2" data-ch="1"><div class="fill"></div><div class="thl"></div><span>Открыть · К2</span><kbd>J</kbd></div></div>`;
   },
   mount(el, p) {
-    Rewards.list = []; this.p = p; this.game = new GAMES[p.id].cls(p.diff || 1); this.paused = true; this.ended = false; this.lastScore = 0; this.intro = true; this.sq = 0; this.lastChips = ''; this.lastHint = null;
+    Rewards.list = []; this.p = p; this.game = new GAMES[p.id].cls(p.diff || 1); this.paused = true; this.ended = false; this.lastScore = 0; this.intro = true; this.sq = 0; this.lastChips = ''; this.lastHint = null; this.qc = null; this.tl = []; this.tlT = 0;
     this.cv = $('#gc', el); this.ctx = this.cv.getContext('2d'); this.fit();
     $$('.pad', el).forEach(bindPad);
     $('#gP', el).onclick = () => this.intro ? App.back() : this.pause();
@@ -954,7 +1047,41 @@ SCR.play = {
     this.offSig = Bus.on('signal:lost', () => { if (!this.intro && !this.ended) this.pause('Сигнал потерян', 'Данные от датчиков не приходят дольше 1.5 секунды. Управление остановлено, игра на паузе. Продолжить можно, когда связь восстановится.', true); });
     this.ro = new ResizeObserver(() => this.fit()); this.ro.observe(this.cv);
   },
-  begin(el) { if (!this.intro) return; this.intro = false; const i = $('#gIntro', el); if (i) { i.style.animation = 'fade .25s reverse both'; setTimeout(() => i.remove(), 240); } this.countdown(el); },
+  begin(el) { if (!this.intro) return; this.intro = false; const i = $('#gIntro', el); if (i) { i.style.animation = 'fade .25s reverse both'; setTimeout(() => i.remove(), 240); } this.needQC() ? this.quick(el) : this.countdown(el); },
+  /* Проверка датчиков перед игрой (5 с): покой → К1 → К2. Электроды каждый день стоят чуть иначе — пороги
+     подстраиваются к сегодняшнему сигналу, чтобы правильное движение не засчитывалось как промах.
+     Не чаще раза в 10 минут; только ЭМГ (у СПППР нет амплитуды). */
+  needQC() { return C().quickCal && C().mode === 'emg' && !GAMES[this.p.id].tut && Date.now() - (S.lastQC || 0) > 6e5; },
+  quick(el) {
+    this.qc = { i: 0, t: 0, c: [] };
+    $('.gwrap', el).insertAdjacentHTML('beforeend', `<div class="qc" id="gQc">${badge('calib', 'peach', 'lg')}<small class="muted">Проверка датчиков · 5 секунд</small><b id="qcT"></b><span class="sub" id="qcD"></span><div class="qcbar"><i id="qcP"></i></div><button class="btn ghost sm" id="qcSkip">Пропустить</button></div>`);
+    $('#qcSkip', el).onclick = () => this.quickEnd(el, null);
+  },
+  QC: [['Расслабь руку', 'обе мышцы в покое', 1.5], ['Сожми сильно · К1', 'сгибатели, как для крепкого хвата', 1.8], ['Раскрой сильно · К2', 'разгибатели, ладонь широко', 1.8]],
+  quickStep(dt, el) {
+    const q = this.qc, [t, d, dur] = this.QC[q.i]; q.t += dt;
+    (q.c[q.i] ||= [[], []]); q.c[q.i][0].push(Ctrl.raw[0]); q.c[q.i][1].push(Ctrl.raw[1]);
+    const T = $('#qcT', el); if (T && T.textContent !== t) { T.textContent = t; $('#qcD', el).textContent = d; Snd.tick(); }
+    const P = $('#qcP', el); if (P) P.style.width = pct(clamp(q.t / dur));
+    if (q.t >= dur) { q.i++; q.t = 0; if (q.i >= this.QC.length) this.quickEnd(el, q.c); }
+  },
+  quickEnd(el, c) {
+    this.qc = null; $('#gQc', el)?.remove(); S.lastQC = Date.now();
+    if (c) {
+      const med = a => { const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length / 2)] ?? 0; }, p90 = a => { const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length * .9)] ?? 0; };
+      const k = S.calib, out = [];
+      for (const i of [0, 1]) {
+        const base = med(c[0][i]), peak = p90(c[i + 1][i]), n = i + 1;
+        if (peak - base < .15 || base > .3) { out.push(`К${n}: сигнал слабый`); continue; }
+        const ob = k['base' + n], om = k['mvc' + n], nb = k.done ? lerp(ob, base, .5) : base, nm = k.done ? lerp(om, Math.max(peak, base + .2), .5) : Math.max(peak, base + .2);
+        k['base' + n] = +nb.toFixed(3); k['mvc' + n] = +nm.toFixed(3);
+        const ch = Math.round(((nm - nb) / Math.max(.08, om - ob) - 1) * 100); out.push(`К${n} ${ch >= 0 ? '+' : ''}${ch}%`);
+      }
+      Ctrl.applyDevThr(); save();
+      toast('calib', out.some(x => x.includes('слабый')) ? 'Сигнал слабый — проверьте электроды' : 'Датчики подстроены', out.join(' · '));
+    }
+    this.countdown(el);
+  },
   unmount() { this.off?.(); this.offDev?.(); this.offSig?.(); this.offBack?.(); this.ro?.disconnect(); this.ended = true; Ctrl.m = null; },
   fit() { const dpr = devicePixelRatio || 1, W = this.cv.offsetWidth, H = this.cv.offsetHeight; if (!W) return; this.cv.width = W * dpr; this.cv.height = H * dpr; this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.game.resize(W, H); },
   async countdown(el) {
@@ -976,7 +1103,13 @@ SCR.play = {
   frame(dt, now, el) {
     const g = this.game; if (!g) return;
     if (this.intro) { this.sq = Ctrl.state === 'CH1' ? this.sq + dt : Math.max(0, this.sq - dt * 2); const q = $('#gSq', el); if (q) q.style.width = pct(clamp(this.sq / .9)); if (this.sq >= .9) { Snd.ok(); this.begin(el); } }
-    if (!this.paused && !this.ended) { g.update(dt, Ctrl, now); addTrainTime(dt); if (g.done) this.finish(); }
+    if (this.qc) this.quickStep(dt, el);
+    if (!this.paused && !this.ended) {
+      g.update(dt, Ctrl, now); addTrainTime(dt);
+      // лента активности каналов для карты игры: каждые 0.2 с — состояние и признак встречного сокращения
+      this.tlT += dt; if (this.tlT >= .2) { this.tlT -= .2; const st = { REST: 0, CH1: 1, CH2: 2, BOTH: 3 }[Ctrl.state] || 0, c = C(), lk = (st === 1 && Ctrl.a[1] > c.thr2 * .5) || (st === 2 && Ctrl.a[0] > c.thr1 * .5); this.tl.push(st + (lk ? 4 : 0)); if (this.tl.length > 900) this.tl.shift(); }
+      if (g.done) this.finish();
+    }
     g.draw(this.ctx);
     const sc = Math.round(g.score || 0), sb = $('#gScore', el); if (sb && sc !== this.lastScore) { sb.textContent = fmtN(sc); if (sc > this.lastScore) { sb.classList.add('bump'); setTimeout(() => sb.classList.remove('bump'), 150); } this.lastScore = sc; }
     const tt = $('#gTime', el); if (tt) tt.textContent = g.hud ? g.hud() : '';
@@ -994,29 +1127,32 @@ SCR.play = {
     if (r.bal != null) r.extra.push(['Баланс К1 / К2', `${Math.round(r.bal * 100)} / ${100 - Math.round(r.bal * 100)} %`]);
     if (r.fat != null) r.extra.push(['Сила к концу игры', r.fat > .05 ? '−' + Math.round(r.fat * 100) + ' %' : 'без спада']);
     if (Ctrl.m && C().mode === 'spppr') { const gs = Object.entries(Ctrl.m.gest); if (gs.length) r.extra.push(['Жесты СПППР', gs.map(([k, n]) => SPN[k].slice(0, 4) + '. ' + n).join(' · ')]); }
-    Session.fatigue = r.fat != null && r.fat > .25; r.stars = r.win === false ? 0 : starsFor(r.acc, purity ?? r.acc); r.lv = lv;
+    Session.fatigue = r.fat != null && r.fat > .25; r.stars = r.win === false ? 0 : starsFor(r.acc, purity ?? r.acc); r.lv = lv; r.tl = this.tl.slice(); const endless = !!this.p.endless;
     const st = gst(id), prevBest = bestScore(id), record = !GAMES[id].tut && r.win !== false && r.score > prevBest && prevBest > 0, U0 = unlockedLv(id);
     st.plays++; if (r.win !== false) st.best = Math.max(st.best, r.score); // рекорд — только за пройденный уровень
-    st.ls[lv - 1] = Math.max(st.ls[lv - 1] || 0, r.stars); st.stars = Math.max(...st.ls);
+    if (!endless) { st.ls[lv - 1] = Math.max(st.ls[lv - 1] || 0, r.stars); st.stars = Math.max(...st.ls); }
+    // бесконечный режим: лестница сложности — чистая победа +0.3, трудная игра −0.25, иначе +0.1
+    if (endless) { const from = adaptOf(id), step = r.win !== false && r.acc >= .85 && (purity ?? 1) >= .7 ? .3 : r.win === false || r.acc < .6 ? -.25 : .1; st.adapt = +clamp(from + step, 2, 4.5).toFixed(2); r.endless = { from, to: st.adapt }; }
     // адаптация сложности: очень чисто — сразу открываем следующий уровень, тяжело — советуем предыдущий
-    if (!GAMES[id].tut) {
+    else if (!GAMES[id].tut) {
       if (r.win !== false && r.acc >= .85 && (purity ?? 1) >= .7 && lv < 3) { st.ls[lv - 1] = Math.max(st.ls[lv - 1], 1); st.diff = lv + 1; r.diffUp = true; }
       else if (r.acc < .45 && lv > 1) { st.diff = lv - 1; r.diffDn = true; }
       else st.diff = lv;
       if (unlockedLv(id) > U0) r.unlocked = unlockedLv(id);
     }
     const d = today(), n = (d.n || 0) + 1; d.acc = Math.round(((d.acc || 0) * (n - 1) + r.acc * 100) / n); if (purity != null) d.purity = Math.round(((d.purity || 0) * (n - 1) + purity * 100) / n); if (r.react) d.react = Math.round(r.react); d.n = n;
-    if (!GAMES[id].tut) S.history.push({ t: Date.now(), game: id, lv, score: r.score, acc: Math.round(r.acc * 100), purity: purity == null ? null : Math.round(purity * 100), dur: Math.round(g.T), react: r.react ? Math.round(r.react) : undefined, stars: r.stars, win: r.win !== false, bal: r.bal == null ? undefined : Math.round(r.bal * 100), fat: r.fat == null ? undefined : Math.round(r.fat * 100), mode: C().mode });
+    if (this.p.weekly) r.weekly = Weekly.record(id, lv, r);
+    if (!GAMES[id].tut) S.history.push({ t: Date.now(), game: id, lv: endless ? 4 : lv, ad: endless ? lv : undefined, score: r.score, acc: Math.round(r.acc * 100), purity: purity == null ? null : Math.round(purity * 100), dur: Math.round(g.T), react: r.react ? Math.round(r.react) : undefined, stars: r.stars, win: r.win !== false, bal: r.bal == null ? undefined : Math.round(r.bal * 100), fat: r.fat == null ? undefined : Math.round(r.fat * 100), mode: C().mode });
     if (S.history.length > 300) S.history.shift();
     r.daily2 = !!this.p.daily && dailyAvail() && r.win !== false; if (r.daily2) S.dailyDone = dayKey();
     // опыт: за победу заметно больше, чем за попытку; очки дают бонус, но не больше 60 XP
-    const xp = Math.round((40 + r.stars * 30 + lv * 15 + Math.min(60, r.score / 50)) * (r.daily2 ? 2 : 1) * (r.win === false ? .5 : 1)); r.xp = xp; addXP(xp); touchStreak();
+    const xp = Math.round((40 + r.stars * 30 + (endless ? 60 : lv * 15) + Math.min(60, r.score / 50)) * (r.daily2 ? 2 : 1) * (r.win === false ? .5 : 1)); r.xp = xp; addXP(xp); touchStreak();
     // миссии качества засчитываются только за пройденный уровень, а не за любую попытку
     Mission.ev('game'); if (r.win !== false && purity != null && purity >= .8) Mission.ev('pure80'); if (r.stars >= 3) Mission.ev('stars3'); if (record) Mission.ev('record');
     r.record = record; save(); checkAch(); Bus.emit('level:end', { game: id, ...r });
     r.rewards = Rewards.list.splice(0);
     // если игрок уже ушёл с экрана игры — не перебрасываем его на результат
-    setTimeout(() => { if (App.cur?.name === 'play' && this.game === g) App.go('result', { id, r, diff: lv, daily: this.p.daily }, { fade: true }); }, 600);
+    setTimeout(() => { if (App.cur?.name === 'play' && this.game === g) App.go('result', { id, r, diff: lv, daily: this.p.daily, endless, weekly: this.p.weekly }, { fade: true }); }, 600);
   }
 };
 function bindPad(p) {
@@ -1041,15 +1177,18 @@ SCR.result = {
       : r.acc < .6 ? 'Точности пока не хватает — попробуй уровень ниже или повысь чувствительность датчиков.'
       : r.win === false ? 'Сигнал хороший, но цель уровня не выполнена. Сыграй ещё раз до конца — ты уже близко.'
       : r.stars >= 3 ? 'Сигнал чистый и точный. Можно повышать уровень.' : 'Хороший результат. Для трёх звёзд держи вторую мышцу полностью расслабленной.';
-    const next = !tut && lv < 3 && unlockedLv(p.id) > lv;
+    const next = !tut && !p.endless && lv < 3 && unlockedLv(p.id) > lv, lvT = p.endless ? 'бесконечный, сложность ' + lv.toFixed(1) : 'уровень ' + lv;
     return `<div class="result-hero">${badge(r.win === false ? 'refresh' : tut ? 'check' : 'trophy', r.win === false ? 'peach' : 'sun', 'xxl')}
       <h1>${title}</h1><div class="starsrow">${starsSvg(r.stars)}</div>
-      <div class="score" data-count="${r.score}">0</div><p class="sub" style="margin:0">очков · ${g.t}${tut ? '' : ' · уровень ' + lv}${r.record ? ' · <b style="color:var(--ok)">рекорд</b>' : ''}</p></div>
+      <div class="score" data-count="${r.score}">0</div><p class="sub" style="margin:0">очков · ${g.t}${tut ? '' : ' · ' + lvT}${r.record ? ' · <b style="color:var(--ok)">рекорд</b>' : ''}</p></div>
       <div class="res-grid">
         <div><b data-count="${Math.round(r.acc * 100)}" data-fmt="%">0</b><small>Точность</small></div>
         <div>${r.purity == null ? '<b>—</b>' : `<b data-count="${Math.round(r.purity * 100)}" data-fmt="%">0</b>`}<small>Чистота</small></div>
         <div><b>+${r.xp}</b><small>XP${r.daily2 ? ' ×2' : ''}</small></div></div>
       <div class="card" style="margin-top:12px">${r.extra.map(([k, v]) => `<div class="kv"><span class="l">${k}</span><b>${v}</b></div>`).join('')}</div>
+      ${gameMap(r.tl || [])}
+      ${r.endless ? `<div class="note ${r.endless.to >= r.endless.from ? 'ok' : ''}">${ic(r.endless.to >= r.endless.from ? 'bolt' : 'info')}<span>Сложность ${r.endless.from.toFixed(1)} → <b>${r.endless.to.toFixed(1)}</b>. ${r.endless.to > r.endless.from ? 'Следующая игра будет чуть труднее.' : r.endless.to < r.endless.from ? 'Следующая игра будет проще — закрепим навык.' : ''}</span></div>` : ''}
+      ${r.weekly ? `<div class="note ${r.weekly.done ? 'ok' : ''}">${ic('calendar')}<span>${r.weekly.just ? '<b>Испытание недели выполнено!</b> +150 XP и деталь для мастерской.' : r.weekly.done ? 'Испытание недели уже выполнено — результат записан в таблицу.' : 'Попытка записана в таблицу испытания недели.'}</span></div>` : ''}
       ${r.unlocked ? `<div class="note ok">${ic('check')}<span><b>Открыт уровень ${r.unlocked}.</b> ${r.diffUp ? 'Ты играешь так чисто, что можно сразу идти дальше.' : 'Новые задачи уже ждут.'}</span></div>` : r.diffDn ? `<div class="note">${ic('info')}<span>Советуем вернуться на уровень ${lv - 1}, чтобы закрепить навык.</span></div>` : ''}
       ${r.rewards?.length ? `<h3 class="h3">Награды</h3><div class="list">${r.rewards.map((w, i) => `<div class="lrow">${badge(IC[w.icon] ? w.icon : 'star', TONES[i % 6])}<div><b>${esc(w.title)}</b><small>${esc(w.sub || '')}</small></div></div>`).join('')}</div>` : ''}
       <div class="note">${ic('chat')}<span>${tip}</span></div>
@@ -1061,7 +1200,7 @@ SCR.result = {
   },
   mount(el, p) {
     if (p.r.stars >= 2 || (GAMES[p.id].tut && p.r.win)) { confetti(120); Snd.win(); } else Snd.ok();
-    $('#rAgain', el).onclick = () => App.go('play', { id: p.id, diff: p.diff || 1, daily: p.daily });
+    $('#rAgain', el).onclick = () => App.go('play', p.endless ? { id: p.id, diff: adaptOf(p.id), endless: true } : { id: p.id, diff: p.diff || 1, daily: p.daily, weekly: p.weekly });
     $('#rNext', el)?.addEventListener('click', () => App.go('play', { id: p.id, diff: (p.diff || 1) + 1, daily: p.daily }));
     $('#rRest', el)?.addEventListener('click', () => restModal());
     $('#rHost', el)?.addEventListener('click', () => Host.back());
@@ -1139,6 +1278,55 @@ SCR.progress = {
     H.innerHTML = hh;
     H.onclick = e => { const i = e.target.closest('i'); if (i) toast('clock', i.title); };
     animateIn(P);
+  }
+};
+
+/* ---------- Как работает сигнал: конвейер обработки вживую (для пользователя, специалиста и жюри) ---------- */
+SCR.signal = {
+  render() {
+    const sp = C().mode === 'spppr';
+    return `<div class="back"><button class="ib" data-back>${ic('back')}</button><span class="grow">Путь сигнала</span>${stateChip("pChip")}</div>
+      ${seg('pch', [['0', 'К1 · сгибатели'], ['1', 'К2 · разгибатели']], String(this.ch || 0))}
+      <div class="card pipe" style="margin-top:12px"><canvas id="pCv"></canvas>
+        <div class="legend" style="margin-top:6px"><span><i style="background:var(--muted)"></i>${sp ? 'вероятность из пакета' : 'сырой сигнал'}</span><span><i style="background:var(--ch1)" id="pLc"></i>после обработки</span><span><i style="background:#3B2F2A"></i>порог</span><span><i style="background:#3B2F2A;opacity:.4"></i>отпускание</span></div></div>
+      <div class="sstat" style="margin-top:12px"><div><small>${sp ? 'Интервал пакетов' : 'Частота'}</small><b id="pRate">—</b></div><div><small>Задержка</small><b id="pLat">—</b></div><div><small>${sp ? 'Потери / ошибки' : 'Ошибочные пакеты'}</small><b id="pBad">—</b></div></div>
+      ${sp ? `<div class="card" style="margin-top:12px"><b>Вероятности жестов (СПППР)</b><div class="pprob" id="pProb">${SP_ALL.map(k => `<div><span>${SPN[k]}</span><i><u data-p="${k}"></u></i><em data-v="${k}">0</em></div>`).join('')}</div><small class="muted" id="pG">Устойчивый жест: —</small></div>` : ''}
+      <h2>Этапы</h2><div class="list psteps">
+        ${(sp ? [
+          ['1', 'Пакет от системы распознавания', 'JSON с вероятностями 7 жестов; время — только разница timestamp_ms между пакетами'],
+          ['2', 'Интерполяция', 'Сглаживание с постоянной времени, равной фактическому интервалу пакетов: джиттер 10–100+ мс без рывков'],
+          ['3', 'Порог и гистерезис', `Сгибание − разгибание дают каналы; включение при ${pct(C().thr1)}, отпускание при ${pct(C().thr1 * C().hyst)}`],
+          ['4', 'Устойчивый жест', 'Новый жест принимается, если держится ≥ 2 пакетов и ≥ 120 мс — единичная ошибка классификатора прощается'],
+          ['5', 'Потеря связи', 'Нет пакетов > 200 мс — скорость гаснет, > 1.5 с — игра на паузе']
+        ] : [
+          ['1', 'Нормализация', 'Амплитуда 0…255 → доля от максимума калибровки × чувствительность датчика'],
+          ['2', 'Сглаживание', `EMA ${pct(1 - C().smoothing)} + ограничение скачков ${C().slew} за отсчёт`],
+          ['3', 'Мёртвая зона', `Фон ниже ${pct(C().deadzone)} считается нулём`],
+          ['4', 'Порог с гистерезисом', `Канал включается выше порога, выключается ниже ${pct(C().hyst)} от него — нет дребезга у границы`],
+          ['5', 'Подавление ложных', `Новое состояние принимается, если держится ${C().suppressMs} мс — короткие выбросы отсекаются`],
+          ['6', 'Состояние', 'Покой / К1 / К2 / обе мышцы → действие в игре и в протезе']
+        ]).map(([n, t, d]) => `<div class="lrow"><span class="pnum">${n}</span><div><b>${t}</b><small>${d}</small></div></div>`).join('')}</div>`;
+  },
+  mount(el) { this.buf = []; this.ch = this.ch || 0; bindSeg(el, 'pch', v => { this.ch = +v; this.buf = []; $('#pLc', el).style.background = this.ch ? 'var(--ch2)' : 'var(--ch1)'; }); $('#pLc', el).style.background = this.ch ? 'var(--ch2)' : 'var(--ch1)'; },
+  frame(dt, now, el) {
+    updChip($('#pChip', el));
+    const c = C(), dz = c.deadzone, f = x => x < dz ? 0 : (x - dz) / (1 - dz), i = this.ch;
+    this.buf.push([f(Ctrl.nRaw[i] || 0), Ctrl.a[i], Ctrl.state]); if (this.buf.length > 360) this.buf.shift();
+    const cv = $('#pCv', el); if (!cv) return; const dpr = devicePixelRatio || 1, W = cv.offsetWidth, H = cv.offsetHeight; if (!W) return;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = W * dpr; cv.height = H * dpr; }
+    const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H);
+    const ph = H - 22, n = 360, X = k => k / (n - 1) * W, Y = v => 6 + (ph - 6) * (1 - clamp(v)), thr = c['thr' + (i + 1)], col = i ? getCss('--ch2') : getCss('--ch1'), txtc = getCss('--text');
+    x.strokeStyle = getCss('--line'); x.lineWidth = 1; for (const v of [.25, .5, .75]) { x.beginPath(); x.moveTo(0, Y(v)); x.lineTo(W, Y(v)); x.stroke(); }
+    x.setLineDash([6, 5]); x.strokeStyle = txtc; x.globalAlpha = .8; x.beginPath(); x.moveTo(0, Y(thr)); x.lineTo(W, Y(thr)); x.stroke(); x.globalAlpha = .35; x.beginPath(); x.moveTo(0, Y(thr * c.hyst)); x.lineTo(W, Y(thr * c.hyst)); x.stroke(); x.setLineDash([]); x.globalAlpha = 1;
+    const off = n - this.buf.length, line = (k, w, s) => { x.strokeStyle = s; x.lineWidth = w; x.lineJoin = 'round'; x.beginPath(); this.buf.forEach((b, j) => j ? x.lineTo(X(j + off), Y(b[k])) : x.moveTo(X(j + off), Y(b[k]))); x.stroke(); };
+    line(0, 1.3, getCss('--muted')); line(1, 2.6, col);
+    this.buf.forEach((b, j) => { x.fillStyle = ST[b[2]].hex; x.globalAlpha = b[2] === 'REST' ? .35 : .9; x.fillRect(X(j + off), H - 12, W / n + .6, 10); }); x.globalAlpha = 1;
+    x.fillStyle = txtc; x.font = '700 10px ' + getComputedStyle(document.body).fontFamily; x.fillText('порог ' + pct(thr), 4, Y(thr) - 4); x.fillText('состояние', 4, H - 15);
+    const sp = c.mode === 'spppr';
+    $('#pRate', el).textContent = sp ? Math.round(Ctrl.pktDt * 1000) + ' мс' : (Ctrl.rate || '—') + (Ctrl.rate ? ' Гц' : '');
+    const L = Ctrl.latency(); $('#pLat', el).textContent = L ? Math.round(L) + ' мс' : '—';
+    $('#pBad', el).textContent = sp ? `${Ctrl.src?.dropped ?? '—'} / ${Ctrl.bad}` : String(Ctrl.bad);
+    if (sp) { for (const k of SP_ALL) { const u = $(`[data-p="${k}"]`, el); if (u) { u.style.width = pct(Ctrl.p[k] || 0); $(`[data-v="${k}"]`, el).textContent = Math.round((Ctrl.p[k] || 0) * 100); } } $('#pG', el).textContent = 'Устойчивый жест: ' + SPN[Ctrl.g]; }
   }
 };
 
@@ -1282,7 +1470,11 @@ SCR.profile = {
         ${row('game', 'Игры', ARCADE().length + ' мини-игр и школа', null, 'data-go="games"')}
         ${row('help', 'Служба поддержки', 'Частые вопросы и связь', null, 'id="pHelp"')}</div>
       <h2>Настройки</h2><div class="card" style="padding:4px 16px">
-        ${row(c.theme === 'dark' ? 'moon' : 'sun', 'Тёмная тема', 'Тёплый тёмный фон', sw('theme', c.theme === 'dark'))}
+        <div class="set" style="display:block"><div class="between"><span>Тема<small>«Системная» следует настройке телефона</small></span></div>${seg('theme', [['light', 'Светлая'], ['dark', 'Тёмная'], ['auto', 'Системная']], c.theme)}</div>
+        <div class="set" style="display:block"><div class="between"><span>Цвет руки протеза<small>В приложении и в играх</small></span></div><div class="hpal" id="hPal">${Object.entries(HAND_PALS).map(([k, p]) => `<button data-pal="${k}" class="${(c.handPal || 'titan') === k ? 'on' : ''}"><i style="background:linear-gradient(135deg,${p.skin},${p.shade});border-color:${p.edge}"></i>${p.n}</button>`).join('')}</div></div>
+        ${row('text', 'Крупный режим', 'Крупнее текст и кнопки — удобно детям и при слабом зрении', sw('big', c.big))}
+        ${row('shapes', 'Формы каналов', 'К1 — круг, К2 — квадрат: различимо без цвета', sw('shapes', c.shapes))}
+        ${row('calib', 'Проверка датчиков перед игрой', '5 секунд: покой, К1, К2 — пороги подстраиваются под сегодняшний сигнал', sw('quickCal', c.quickCal))}
         <div class="set" style="display:block"><div class="between"><span>Протез на руке<small>Кнопки и панели — под здоровую руку</small></span></div>${seg('hand', [['left', 'Левой'], ['right', 'Правой']], c.hand)}</div>
         ${row('mirror', 'Зеркальный интерфейс', c.mirror ? 'Управление под левую руку' : 'Управление под правую руку', sw('mirror', c.mirror))}
         <div class="set" style="display:block"><div class="between"><span>Длина сеанса<small>Потом приложение предложит отдых</small></span><span class="tag soft" id="sesV">${c.sessionMin} мин</span></div><input type="range" min="5" max="20" step="1" value="${c.sessionMin}" id="ses"></div>
@@ -1303,9 +1495,11 @@ SCR.profile = {
     $$('[data-sw]', el).forEach(b => b.addEventListener('click', e => {
       e.stopPropagation(); const k = b.dataset.sw, c = C();
       if (k === 'theme') { c.theme = c.theme === 'dark' ? 'light' : 'dark'; applyTheme(); }
-      else { c[k] = !c[k]; if (k === 'mirror') applyMirror(); if (k === 'voice') c.voice ? Native.say('Голосовые подсказки включены', { force: true }) : Native.hush(); }
+      else { c[k] = !c[k]; if (k === 'mirror') applyMirror(); if (k === 'voice') c.voice ? Native.say('Голосовые подсказки включены', { force: true }) : Native.hush(); if (k === 'big') applyBig(); }
       b.classList.toggle('on'); save(); vib(8);
     }));
+    bindSeg(el, 'theme', v => { C().theme = v; applyTheme(); save(); vib(8); });
+    $('#hPal', el).onclick = e => { const b = e.target.closest('[data-pal]'); if (!b) return; C().handPal = b.dataset.pal; applyHand(); save(); $$('#hPal button', el).forEach(x => x.classList.toggle('on', x === b)); Snd.tick(); toast('palette', 'Цвет руки: ' + HAND_PALS[b.dataset.pal].n.toLowerCase()); };
     bindSeg(el, 'hand', v => { const c = C(); c.hand = v; c.mirror = v === 'right'; applyMirror(); save(); const m = $('[data-sw="mirror"]', el); m?.classList.toggle('on', c.mirror); toast('mirror', 'Протез на ' + (v === 'left' ? 'левой' : 'правой') + ' руке', 'Интерфейс — под ' + (c.mirror ? 'левую' : 'правую') + ' здоровую руку'); });
     const se = $('#ses', el); rangeFill(se); se.oninput = () => { C().sessionMin = +se.value; rangeFill(se); $('#sesV', el).textContent = se.value + ' мин'; save(); };
     const g = $('#goal', el); rangeFill(g); g.oninput = () => { S.profile.goalMin = +g.value; rangeFill(g); $('#goalV', el).textContent = g.value + ' мин'; save(); };
@@ -1332,5 +1526,14 @@ function supportSheet() {
 /* Состояние протеза меняется само (обрыв, заряд) — обновляем то, что на экране */
 Bus.on('device', () => { const c = App.cur; if (!c) return; if (c.name === 'device') App.refresh(); else if (c.name === 'home') { const b = $('.pill-st', c.el), d = S.device; if (b) b.innerHTML = `<i class="led ${d.connected ? '' : 'off'}"></i><span class="pill-name">${d.connected ? (d.real ? 'Протез' : 'Демо') : 'Нет связи'}</span>${d.connected ? '· ' + battTxt() : ''}`; } });
 Bus.on('battery', () => Bus.emit('device'));
-function applyTheme() { document.documentElement.dataset.theme = C().theme; $('meta[name=theme-color]').content = C().theme === 'dark' ? '#1B1613' : '#FBF4EA'; }
+const mqDark = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
+const themeNow = () => C().theme === 'auto' ? (mqDark?.matches ? 'dark' : 'light') : C().theme === 'dark' ? 'dark' : 'light';
+function applyTheme() {
+  const th = themeNow(), bg = th === 'dark' ? '#1B1613' : '#FBF4EA';
+  document.documentElement.dataset.theme = th; $('meta[name=theme-color]').content = bg; Native.statusBar(th === 'dark', bg); applyHand();
+}
+mqDark?.addEventListener?.('change', () => { if (C().theme === 'auto') applyTheme(); });
+/* цвет руки: «Титан» берётся из темы (--hand-* в app.css), остальные палитры — поверх неё */
+function applyHand() { const k = C().handPal || 'titan', p = HAND_PALS[k], st = document.documentElement.style; for (const n of ['skin', 'shade', 'edge', 'cuff']) { if (k === 'titan' || !p) st.removeProperty('--hand-' + n); else st.setProperty('--hand-' + n, p[n]); } }
+function applyBig() { document.body.classList.toggle('big', !!C().big); }
 function applyMirror() { document.body.classList.toggle('mirror', C().mirror); $('#phone').classList.toggle('mirror', C().mirror); document.body.classList.toggle('mirror-pads', C().mirror); }

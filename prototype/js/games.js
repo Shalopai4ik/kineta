@@ -11,11 +11,12 @@ const imgOk = i => i && i.complete && i.naturalWidth;
 /* Рука протеза для canvas: тот же SVG, что и в интерфейсе, с подставленными цветами */
 const HAND_IMG = {};
 function handImg(key, pose) {
-  if (HAND_IMG[key]) return HAND_IMG[key];
-  const vars = { '--hand-skin': '#EEF2F7', '--hand-shade': '#C3CEDB', '--hand-edge': '#6F7C8F', '--hand-cuff': '#3A4454', '--primary': '#EE7A45' }; // те же цвета, что --hand-* в app.css
+  const pal = HAND_PALS[C().handPal] || HAND_PALS.titan, K = (C().handPal || 'titan') + ':' + key;
+  if (HAND_IMG[K]) return HAND_IMG[K];
+  const vars = { '--hand-skin': pal.skin, '--hand-shade': pal.shade, '--hand-edge': pal.edge, '--hand-cuff': pal.cuff, '--primary': '#EE7A45' }; // палитры — HAND_PALS в core.js
   let svg = handSVG(pose).replace(/var\((--[a-z-]+)\)/g, (m, v) => vars[v] || '#999');
   if (!/width=/.test(svg.slice(0, 120))) svg = svg.replace('<svg ', '<svg width="368" height="544" ');
-  const i = new Image(); i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); HAND_IMG[key] = i; return i;
+  const i = new Image(); i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); HAND_IMG[K] = i; return i;
 }
 const POSES = { fist: [70, 96, 96, 96, 96, 55], open: [0, 0, 0, 0, 0, 15], relax: [12, 10, 12, 16, 20, 30], point: [65, 0, 95, 95, 95, 70] };
 const handFor = k => handImg(k, POSES[k]);
@@ -35,6 +36,25 @@ function txtO(ctx, s, x, y, size, fill = '#fff', stroke = '#C85A22', lw = 6, ali
 const hexRgb = h => { if (h.startsWith('rgb')) return h.match(/[\d.]+/g).slice(0, 3).map(Number); h = h.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
 function shade(hex, k) { const [r, g, b] = hexRgb(hex), t = k > 0 ? 255 : 0, a = Math.abs(k); return `rgb(${Math.round(r + (t - r) * a)},${Math.round(g + (t - g) * a)},${Math.round(b + (t - b) * a)})`; }
 const rgba = (hex, a) => { const [r, g, b] = hexRgb(hex); return `rgba(${r},${g},${b},${a})`; };
+/* Тёмная тема: сцены переходят в «вечер» — фон смешивается с ночным синим, солнце становится луной.
+   Игровые объекты, шкалы и подписи на плашках остаются яркими, чтобы контраст управления не падал. */
+const NIGHT = () => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark';
+const NIGHT_BASE = [27, 30, 47];
+function mixRgb(c, base, k) { const [r, g, b] = hexRgb(c); return `rgb(${Math.round(r + (base[0] - r) * k)},${Math.round(g + (base[1] - g) * k)},${Math.round(b + (base[2] - b) * k)})`; }
+const luma = c => { const [r, g, b] = hexRgb(c); return (r * .3 + g * .59 + b * .11) / 255; };
+/* цвет фона сцены: днём как есть, ночью — приглушённый; уже тёмные цвета не трогаем */
+const nt = (c, k = .62) => NIGHT() && luma(c) > .35 ? mixRgb(c, NIGHT_BASE, k) : c;
+/* цвет текста прямо на фоне сцены: ночью светлый */
+const ink = c => !NIGHT() ? c : c === '#9C8B7F' ? '#B9AEC2' : '#F2ECF5';
+/* Форма канала для различения без цвета: К1 — круг, К2 — квадрат, обе — ромб (настройка «Формы каналов») */
+function chMark(ctx, ch, x, y, r, col = '#fff') {
+  if (!C().shapes) return;
+  ctx.save(); ctx.fillStyle = col; ctx.strokeStyle = 'rgba(40,30,40,.35)'; ctx.lineWidth = 1.5; ctx.beginPath();
+  if (ch === 0) ctx.arc(x, y, r, 0, 7);
+  else if (ch === 1) ctx.roundRect(x - r * .9, y - r * .9, r * 1.8, r * 1.8, r * .3);
+  else { ctx.moveTo(x, y - r * 1.15); ctx.lineTo(x + r * 1.15, y); ctx.lineTo(x, y + r * 1.15); ctx.lineTo(x - r * 1.15, y); ctx.closePath(); }
+  ctx.fill(); ctx.stroke(); ctx.restore();
+}
 /* «мармеладный» прямоугольник: тень-подложка, градиент, глянцевый блик */
 function gum(ctx, x, y, w, h, r, col, depth = 5) {
   rr(ctx, x, y + depth, w, h, r); ctx.fillStyle = shade(col, -.22); ctx.fill();
@@ -51,19 +71,26 @@ function ball(ctx, x, y, r, col, glow = 0) {
   ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.ellipse(x - r * .32, y - r * .42, r * .3, r * .18, -.5, 0, 7); ctx.fill();
 }
 function shadowE(ctx, x, y, rx, ry, a = .18) { ctx.fillStyle = `rgba(90,50,30,${a})`; ctx.beginPath(); ctx.ellipse(x, y, rx, Math.max(.5, ry), 0, 0, 7); ctx.fill(); }
-function skyG(ctx, W, H, stops) { const g = ctx.createLinearGradient(0, 0, 0, H); stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c)); ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40); }
+function skyG(ctx, W, H, stops) { const g = ctx.createLinearGradient(0, 0, 0, H); stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), nt(c))); ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40); }
 function glow(ctx, x, y, r, col, a = .6) { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, rgba(col, a)); g.addColorStop(1, rgba(col, 0)); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); }
 function sun(ctx, x, y, r) {
+  if (NIGHT()) { // луна
+    glow(ctx, x, y, r * 3.2, '#C9D4FF', .28);
+    const m = ctx.createRadialGradient(x - r * .3, y - r * .3, r * .1, x, y, r); m.addColorStop(0, '#FFFBEA'); m.addColorStop(1, '#D9DCEB');
+    ctx.fillStyle = m; ctx.beginPath(); ctx.arc(x, y, r * .9, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(150,155,185,.35)'; [[.3, -.2, .18], [-.25, .25, .13], [.1, .4, .09]].forEach(([a, b, c]) => { ctx.beginPath(); ctx.arc(x + a * r, y + b * r, c * r, 0, 7); ctx.fill(); });
+    return;
+  }
   glow(ctx, x, y, r * 4, '#FFE9B0', .75);
   const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, '#FFF8DC'); g.addColorStop(.7, '#FFE08A'); g.addColorStop(1, '#FFCF6A');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
 }
 function cloud(ctx, x, y, s, a = .9) {
-  ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.beginPath();
+  ctx.fillStyle = NIGHT() ? `rgba(190,198,230,${a * .22})` : `rgba(255,255,255,${a})`; ctx.beginPath();
   ctx.arc(x, y, 18 * s, 0, 7); ctx.arc(x + 20 * s, y - 10 * s, 22 * s, 0, 7); ctx.arc(x + 44 * s, y - 2 * s, 17 * s, 0, 7); ctx.arc(x + 24 * s, y + 6 * s, 16 * s, 0, 7); ctx.fill();
 }
 function hills(ctx, W, base, amp, col, shift, seed, freq = 90, H = 2000) {
-  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-10, H);
+  ctx.fillStyle = nt(col, .58); ctx.beginPath(); ctx.moveTo(-10, H);
   for (let x = -10; x <= W + 10; x += 6) { const t = (x + shift) / freq + seed; ctx.lineTo(x, base - amp * (.55 + .45 * Math.sin(t) * Math.sin(t * .41 + seed * 1.7))); }
   ctx.lineTo(W + 10, H); ctx.fill();
 }
@@ -106,7 +133,16 @@ class Banner {
   }
 }
 const starsFor = (acc, purity) => { const k = acc * .7 + purity * .3; return k >= .85 ? 3 : k >= .68 ? 2 : k >= .45 ? 1 : 0; };
-const LV = (lv, arr) => arr[clamp(lv, 1, arr.length) - 1];
+/* параметр уровня: 1–3 — как задано; дробный уровень (бесконечный режим) — интерполяция, выше 3 — продолжение
+   тренда последнего шага с ограничением, целые величины (счётчики) округляются */
+const LV = (lv, arr) => {
+  if (Number.isInteger(lv) && lv >= 1 && lv <= arr.length) return arr[lv - 1];
+  if (typeof arr[0] !== 'number') return arr[clamp(Math.round(lv), 1, arr.length) - 1];
+  const n = arr.length, x = clamp(lv, 1, n + 2) - 1, i = Math.min(n - 2, Math.floor(x)), v = arr[i] + (arr[i + 1] - arr[i]) * (x - i);
+  const lo = Math.min(...arr), hi = Math.max(...arr), ints = arr.every(Number.isInteger);
+  const r = clamp(v, lo * (ints ? 1 : .6), hi * 1.6);
+  return ints ? Math.round(r) : r;
+};
 
 /* =================== 1. НЕЙРО-ГОНКА (пропорциональное руление) =================== */
 class RaceGame {
@@ -116,6 +152,9 @@ class RaceGame {
     this.goal = LV(lv, [2200, 3200, 4200]); this.total = 0;
     this.pos = 0; this.speed = 0; this.max = 7800 + lv * 1300; this.px = 0; this.nitro = 1; this.boost = false; this.finished = false;
     this.offT = 0; this.crash = 0; this.shake = 0; this.crystals = 0; this.hits = 0; this.sky = 0; this.cleanDist = 0; this.clean1k = false; this.dist = 0;
+    // призрак: лучший финиш этого уровня — дистанция и положение на дороге каждые 0.25 с
+    this.gKey = Number.isInteger(lv) && lv <= 3 ? String(lv) : 'endless';
+    this.ghost = S.games?.race?.ghost?.[this.gKey] || null; this.trk = { d: [], x: [] }; this.trkT = 0;
     this.build();
   }
   build() {
@@ -139,7 +178,8 @@ class RaceGame {
   onState() { }
   progress() { return clamp(this.dist / this.goal); }
   hud() { return fmtTime(this.dur - this.T); }
-  chips() { return [['Скорость', Math.round(this.speed / 40) + ' км/ч'], ...(Ctrl.bothOK() ? [['Нитро', Math.round(this.nitro * 100) + '%', '#9B78E8']] : []), ['Кристаллы', this.crystals]]; }
+  ghostAt(T) { const g = this.ghost; if (!g) return null; const f = T / .25, i = Math.floor(f); if (i >= g.d.length - 1) return { d: g.d.at(-1), x: g.x.at(-1), fin: true }; const k = f - i; return { d: g.d[i] + (g.d[i + 1] - g.d[i]) * k, x: g.x[i] + (g.x[i + 1] - g.x[i]) * k }; }
+  chips() { const gh = this.ghostAt(this.T), gap = gh ? Math.round(this.dist - gh.d) : null; return [['Скорость', Math.round(this.speed / 40) + ' км/ч'], ...(gap != null ? [['Призрак', (gap >= 0 ? '+' : '−') + Math.abs(gap) + ' м', gap >= 0 ? '#3DB37A' : '#9B78E8']] : []), ...(Ctrl.bothOK() ? [['Нитро', Math.round(this.nitro * 100) + '%', '#9B78E8']] : []), ['Кристаллы', this.crystals]]; }
   hint() { if (this.finished) return ['Финиш!', 'ok']; if (Math.abs(this.px) > 1) return ['Обочина — верни машину на трассу', 'warn']; if (this.boost) return ['Нитро!', 'ok']; return this.T < 6 ? 'К1 — влево · К2 — вправо · обе — нитро' : ''; }
   update(dt, c) {
     this.T += dt; this.fx.update(dt); this.ban.update(dt);
@@ -155,6 +195,7 @@ class RaceGame {
     this.px -= dt * 2 * pct * pct * seg.curve * .16; // центробежная сила
     this.px = clamp(this.px, -1.8, 1.8);
     this.pos += this.speed * dt; this.dist += this.speed * dt / 100;
+    this.trkT += dt; if (this.trkT >= .25) { this.trkT -= .25; this.trk.d.push(Math.round(this.dist)); this.trk.x.push(+this.px.toFixed(2)); }
     this.sky += seg.curve * pct * dt * 30;
     if (Math.abs(this.px) > 1) { this.offT += dt; this.shake = .2; this.cleanDist = 0; }
     else { this.cleanDist += this.speed * dt / 100; if (this.cleanDist > 1000 && !this.clean1k) { this.clean1k = true; Mission.ev('race:clean1k'); this.ban.show('1000 м без аварий!', '#fff', '#3DB37A', 1.4, 26); } }
@@ -166,7 +207,7 @@ class RaceGame {
       else if (this.crash <= 0) { this.hits++; this.crash = 1; this.speed *= .35; this.shake = .5; this.cleanDist = 0; Snd.bad(); this.fx.burst(this.W / 2, this.H * .82, ['#FFB07C', '#FFD27A', '#fff'], 24, 300); this.ban.show('Бам!', '#fff', '#EE5D5D', .8, 34); }
     });
     if (this.shake > 0) this.shake -= dt;
-    if (this.dist >= this.goal) { this.finished = true; this.finT = 0; Snd.win(); this.ban.show('ФИНИШ!', '#fff', '#3DB37A', 1.6, 44); this.fx.burst(this.W / 2, this.H * .4, ['#FF9A5E', '#FFD27A', '#7FD3A8', '#86C5F0', '#E995B6'], 60, 420, true); }
+    if (this.dist >= this.goal) { this.finished = true; this.finT = 0; this.finAt = this.T; Snd.win(); this.ban.show('ФИНИШ!', '#fff', '#3DB37A', 1.6, 44); this.fx.burst(this.W / 2, this.H * .4, ['#FF9A5E', '#FFD27A', '#7FD3A8', '#86C5F0', '#E995B6'], 60, 420, true); }
   }
   get score() { return Math.max(0, Math.round(this.dist + this.crystals * 50 - this.hits * 100 + (this.finished ? (this.dur - this.T) * 25 : 0))); }
   draw(ctx) {
@@ -179,7 +220,7 @@ class RaceGame {
     for (let k = 0; k < 4; k++) { const cx = ((k * 170 - this.sky * .45 + now * 6) % (W + 200) + W + 200) % (W + 200) - 100; cloud(ctx, cx, hor * (.22 + (k % 2) * .18), .8 + (k % 3) * .2, .85); }
     hills(ctx, W, hor + 2, 80, '#F2BFA3', this.sky * .25, 1, 120, hor + 4);
     hills(ctx, W, hor + 2, 52, '#C9E2B0', this.sky * .5, 4, 80, hor + 4);
-    ctx.fillStyle = '#BFE3A5'; ctx.fillRect(-10, hor, W + 20, H - hor + 10);
+    ctx.fillStyle = nt('#BFE3A5'); ctx.fillRect(-10, hor, W + 20, H - hor + 10);
     // дорога
     const base = Math.floor(this.pos / this.SEG), bp = (this.pos % this.SEG) / this.SEG, N = this.segs.length;
     let x = 0, dx = -this.segs[base % N].curve * bp, maxy = H; const camX = this.px * this.ROAD, proj = [];
@@ -191,14 +232,14 @@ class RaceGame {
       proj[n] = { p1, i, clip: maxy };
       if (z1 <= 0 || p2.y >= maxy) continue;
       const alt = Math.floor(i / 3) % 2, fog = clamp(n / this.draw_);
-      ctx.fillStyle = alt ? '#B3DC98' : '#BFE3A5'; ctx.fillRect(-10, p2.y, W + 20, p1.y - p2.y + 1);
+      ctx.fillStyle = nt(alt ? '#B3DC98' : '#BFE3A5'); ctx.fillRect(-10, p2.y, W + 20, p1.y - p2.y + 1);
       const quad = (x1, w1, x2, w2, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x1 - w1, p1.y + 1.5); ctx.lineTo(x1 + w1, p1.y + 1.5); ctx.lineTo(x2 + w2, p2.y); ctx.lineTo(x2 - w2, p2.y); ctx.fill(); };
       quad(p1.x, p1.w * 1.15, p2.x, p2.w * 1.15, alt ? '#FFF7EE' : '#FF8F5A');
       const fin = i >= this.fin && i < this.fin + 3;
       quad(p1.x, p1.w, p2.x, p2.w, fin ? '#fff' : alt ? '#8E8189' : '#968990');
       if (fin) { const n8 = 8; for (let k = 0; k < n8; k++) if ((k + i) % 2) quad(p1.x - p1.w + p1.w * 2 * (k + .5) / n8, p1.w / n8, p2.x - p2.w + p2.w * 2 * (k + .5) / n8, p2.w / n8, '#3B2F2A'); }
       else if (alt) { quad(p1.x - p1.w / 3, p1.w * .028, p2.x - p2.w / 3, p2.w * .028, '#FFF7EE'); quad(p1.x + p1.w / 3, p1.w * .028, p2.x + p2.w / 3, p2.w * .028, '#FFF7EE'); }
-      if (fog > .55) { ctx.fillStyle = `rgba(255,236,214,${(fog - .55) * 1.4})`; ctx.fillRect(-10, p2.y, W + 20, p1.y - p2.y + 1); }
+      if (fog > .55) { ctx.fillStyle = `rgba(${NIGHT() ? '27,30,47' : '255,236,214'},${(fog - .55) * 1.4})`; ctx.fillRect(-10, p2.y, W + 20, p1.y - p2.y + 1); }
       maxy = p2.y;
     }
     // объекты и декор — от дальних к ближним
@@ -218,6 +259,12 @@ class RaceGame {
       });
       ctx.restore();
     }
+    // призрак лучшего заезда — полупрозрачная машина впереди на дороге
+    const gh = this.ghostAt(this.T);
+    if (gh && !this.finished) {
+      const z = (gh.d - this.dist) * 100, n = Math.floor((z + this.pos % this.SEG) / this.SEG), pr = proj[n];
+      if (z > 60 && pr && n < this.draw_ - 2 && pr.p1.w > 3) { ctx.save(); ctx.globalAlpha = .5; ctx.beginPath(); ctx.rect(-40, 0, W + 80, pr.clip); ctx.clip(); carRear(ctx, pr.p1.x + pr.p1.w * clamp(gh.x - this.px, -1.6, 1.6) * .6, pr.p1.y, pr.p1.w * .5, '#B79CF0', 0, false); ctx.restore(); }
+    }
     // машина игрока
     const tilt = clamp((Ctrl.a[1] - Ctrl.a[0]) * .2, -.2, .2), cw = Math.min(120, W * .26);
     if (this.boost) { for (let k = 0; k < 6; k++) ball(ctx, W / 2 + (Math.random() - .5) * cw * .5, H - 14 + Math.random() * 12, 4 + Math.random() * 7, pick(['#FFB07C', '#FFD27A', '#FF8F5A'])); }
@@ -234,7 +281,13 @@ class RaceGame {
   }
   result() {
     const acc = clamp(1 - this.offT / Math.max(1, this.T) - this.hits * .05) * (this.finished ? 1 : .85);
-    return { score: this.score, acc, win: this.finished, extra: [['Дистанция', `${Math.round(Math.min(this.dist, this.goal))} / ${this.goal} м`], ['Финиш', this.finished ? fmtTime(this.T) : 'не успел'], ['Кристаллы', this.crystals], ['Аварии', this.hits], ['На обочине', this.offT.toFixed(1) + ' с']] };
+    let ghostRow = null;
+    if (this.finished) {
+      const st = S.games.race ||= { best: 0, plays: 0, stars: 0 }, gs = st.ghost ||= {}, old = gs[this.gKey];
+      if (!old || this.finAt < old.T) { gs[this.gKey] = { T: +this.finAt.toFixed(2), d: this.trk.d, x: this.trk.x, at: Date.now() }; ghostRow = ['Призрак', old ? `новый: быстрее на ${(old.T - this.finAt).toFixed(1)} с` : 'записан — обгони его в следующий раз']; }
+      else ghostRow = ['Призрак', `медленнее на ${(this.finAt - old.T).toFixed(1)} с`];
+    } else if (this.ghost) ghostRow = ['Призрак', 'финишировал раньше'];
+    return { score: this.score, acc, win: this.finished, extra: [...(ghostRow ? [ghostRow] : []), ['Дистанция', `${Math.round(Math.min(this.dist, this.goal))} / ${this.goal} м`], ['Финиш', this.finished ? fmtTime(this.T) : 'не успел'], ['Кристаллы', this.crystals], ['Аварии', this.hits], ['На обочине', this.offT.toFixed(1) + ' с']] };
   }
 }
 function carRear(ctx, x, y, w, col, tilt = 0, me = false, boost = false) {
@@ -333,18 +386,18 @@ class FlapGame {
     // город мечты
     for (let k = 0; k < 14; k++) {
       const bw = 46, bx = ((k * 62 - this.bg * .25) % (14 * 62) + 14 * 62) % (14 * 62) - 60, bh = 70 + ((k * 37) % 5) * 26;
-      gum(ctx, bx, ground - bh - 30, bw, bh + 40, 14, ['#E8DDFB', '#FBE0D2', '#DCEBFA'][k % 3], 0);
+      gum(ctx, bx, ground - bh - 30, bw, bh + 40, 14, nt(['#E8DDFB', '#FBE0D2', '#DCEBFA'][k % 3], .55), 0);
       ctx.fillStyle = 'rgba(255,214,140,.8)'; for (let wy = 0; wy < bh / 26 - 1; wy++) for (let wx = 0; wx < 2; wx++) if ((k + wy + wx) % 3) { rr(ctx, bx + 10 + wx * 18, ground - bh - 14 + wy * 26, 9, 12, 3); ctx.fill(); }
     }
     hills(ctx, W, ground + 4, 26, '#BFE6B8', this.bg * .6, 2, 70, H + 10);
-    ctx.fillStyle = '#A8DB9F'; ctx.fillRect(0, ground + 6, W, H);
+    ctx.fillStyle = nt('#A8DB9F'); ctx.fillRect(0, ground + 6, W, H);
     // ворота
     this.gates.forEach(g => {
       const top = g.cy - g.gap / 2, bot = g.cy + g.gap / 2, w = 54;
       gum(ctx, g.x - w / 2, -20, w, top + 20, 18, g.col, 0); gum(ctx, g.x - w / 2 - 6, top - 22, w + 12, 22, 11, shade(g.col, -.08), 4);
       gum(ctx, g.x - w / 2, bot, w, ground - bot + 30, 18, g.col, 0); gum(ctx, g.x - w / 2 - 6, bot, w + 12, 22, 11, shade(g.col, -.08), 4);
       ctx.strokeStyle = `rgba(255,255,255,${.5 + .2 * Math.sin(t * 5)})`; ctx.lineWidth = 3; ctx.setLineDash([2, 10]); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(g.x, top + 6); ctx.lineTo(g.x, bot - 6); ctx.stroke(); ctx.setLineDash([]);
-      txt(ctx, g.ch ? 'К2' : 'К1', g.x, top - 11, 12, '#fff');
+      txt(ctx, g.ch ? 'К2' : 'К1', g.x + (C().shapes ? 7 : 0), top - 11, 12, '#fff'); chMark(ctx, g.ch, g.x - 12, top - 11, 4.5);
       if (g.gem) { const yy = g.cy + Math.sin(t * 3 + g.x * .01) * 6; glow(ctx, g.x, yy, 30, '#C9B4FF', .6); gem(ctx, g.x, yy, 13); }
     });
     // дрон
@@ -353,7 +406,7 @@ class FlapGame {
       const mc = this.mode ? '#5FB3EA' : '#FF9A5E'; glow(ctx, x, this.y, r * 2.1, mc, .35);
       drone(ctx, x, this.y, r, t, clamp(this.vy / 900, -.45, .6), this.charge > 0);
       ctx.strokeStyle = mc; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, this.y, r + 5, 0, 7); ctx.stroke();
-      txt(ctx, this.mode ? 'К2' : 'К1', x, this.y + r + 16, 11, mc);
+      txt(ctx, this.mode ? 'К2' : 'К1', x, this.y + r + 16, 11, mc); chMark(ctx, this.mode ? 1 : 0, x + 16, this.y + r + 16, 4, mc);
     }
     this.fx.draw(ctx);
     this.ban.draw(ctx, W / 2, H * .38);
@@ -467,8 +520,8 @@ class RhythmGame {
       if (n.j && n.j !== 'm') return;
       if (n.j === 'm' && y > H + 30) return;
       ctx.globalAlpha = n.j === 'm' ? .3 : 1;
-      if (n.lane === 2) { const x0 = this.laneX(0) - 26, w = this.laneX(1) - this.laneX(0) + 52; gum(ctx, x0, y - 17, w, 34, 17, col, 4); txt(ctx, 'ОБЕ', W / 2, y, 14, '#fff'); }
-      else ball(ctx, x, y, 22, col, 16);
+      if (n.lane === 2) { const x0 = this.laneX(0) - 26, w = this.laneX(1) - this.laneX(0) + 52; gum(ctx, x0, y - 17, w, 34, 17, col, 4); txt(ctx, 'ОБЕ', W / 2, y, 14, '#fff'); chMark(ctx, 2, W / 2 - 34, y, 6); }
+      else { ball(ctx, x, y, 22, col, 16); chMark(ctx, n.lane, x, y + 2, 7); }
       ctx.globalAlpha = 1;
     });
     this.fx.draw(ctx);
@@ -550,7 +603,7 @@ class FishGame {
     cloud(ctx, SW * .14 + Math.sin(t * .1) * 20, wy * .3, .75 * u, .85); cloud(ctx, SW * .52 + Math.sin(t * .08) * 30, wy * .14, .55 * u, .7);
     hills(ctx, W, wy + 2, 46 * u, '#EBB89F', 0, 1, 110, wy + 3); hills(ctx, W, wy + 2, 26 * u, '#BFD9A8', 40, 3, 70, wy + 3);
     // ---- вода ----
-    const g = ctx.createLinearGradient(0, wy, 0, H); g.addColorStop(0, '#95D3E2'); g.addColorStop(.45, '#5FAFD0'); g.addColorStop(1, '#2F78A8'); ctx.fillStyle = g; ctx.fillRect(0, wy, W, H - wy);
+    const g = ctx.createLinearGradient(0, wy, 0, H); g.addColorStop(0, nt('#95D3E2', .45)); g.addColorStop(.45, nt('#5FAFD0', .45)); g.addColorStop(1, nt('#2F78A8', .45)); ctx.fillStyle = g; ctx.fillRect(0, wy, W, H - wy);
     for (let k = 0; k < 10; k++) { const ry = wy + 7 + k * 8 * u, rw = (38 - k * 3) * u; ctx.fillStyle = `rgba(255,228,165,${.5 - k * .045})`; rr(ctx, SW * .7 - rw / 2 + Math.sin(t * 2 + k) * 5, ry, rw, 3, 2); ctx.fill(); }
     // световые лучи под водой
     ctx.save(); ctx.globalAlpha = .08 + fightK * .04; ctx.fillStyle = '#fff';
@@ -634,9 +687,11 @@ function fishSprite(ctx, x, y, s, col, dir = 1, t = 0) {
    Цикл одной кружки: подвести раскрытую кисть → сжать до зелёной зоны и расслабиться → донести без
    встречных сокращений (на 2–3 уровне кружку доливают — хват нужно чуть усилить) → поставить, раскрыв кисть. */
 const CUPS = [
-  { n: 'Кружка чая', k: 'mug', c: '#F28C6A', mid: .55, wk: 1, brk: 'Кружка треснула' },
-  { n: 'Стакан воды', k: 'glass', c: '#8ECFE8', mid: .5, wk: .9, brk: 'Стакан лопнул' },
-  { n: 'Бумажный стакан', k: 'paper', c: '#E9C38E', mid: .36, wk: .85, brk: 'Стакан смялся' }
+  { n: 'Кружка чая', k: 'mug', c: '#F28C6A', mid: .55, wk: 1, lv: 1, brk: 'Кружка треснула' },
+  { n: 'Стакан воды', k: 'glass', c: '#8ECFE8', mid: .5, wk: .9, lv: 1, brk: 'Стакан лопнул' },
+  { n: 'Банка варенья', k: 'jar', c: '#C9475B', mid: .74, wk: .9, lv: 1, brk: 'Банка треснула', heavy: true },
+  { n: 'Бумажный стакан', k: 'paper', c: '#E9C38E', mid: .36, wk: .85, lv: 2, brk: 'Стакан смялся' },
+  { n: 'Яйцо', k: 'egg', c: '#F6E6CF', mid: .22, wk: .7, lv: 3, brk: 'Яйцо раздавлено', noRefill: true }
 ];
 const MUG_POSE = (f) => [lerp(0, 58, f), lerp(0, 72, f), lerp(0, 74, f), lerp(0, 76, f), lerp(0, 80, f), lerp(15, 62, f)];
 class MugGame {
@@ -648,7 +703,7 @@ class MugGame {
     this.newCup();
   }
   newCup() {
-    const cup = CUPS[Math.floor(Math.random() * Math.min(CUPS.length, this.diff + 1))];
+    const pool = CUPS.filter(c => c.lv <= this.diff + .01), cup = pick(pool);
     const w = this.width * cup.wk, mid = clamp(cup.mid + rnd(-.06, .06), w / 2 + .12, .9 - w / 2);
     Object.assign(this, { cup, lo: mid - w / 2, hi: mid + w / 2, ph: 'reach', pt: 0, slipT: 0, crushT: 0, restT: 0, spill: 0, refill: false, crack: 0, fallen: 0, cx: 0, carried: false, lastFail: null });
     this.f = Math.max(this.f, .55); // кисть приходит полузакрытой: сначала её нужно раскрыть
@@ -707,7 +762,7 @@ class MugGame {
     } else if (this.ph === 'carry') {
       const T = LV(this.diff, [3, 3.6, 4.2]); this.cx = clamp(this.pt / T);
       this.carryT += dt; this.cupCarry += dt; if (inWin) { this.inT += dt; this.cupIn += dt; }
-      if (this.diff >= 2 && !this.refill && this.cx > .4) { this.refill = true; this.refillT = 0; this.lo += .1; this.hi = Math.min(.97, this.hi + .1); this.ban.show('Долили!', '#fff', '#3E9FD6', .9, 26); Snd.splash(); }
+      if (this.diff >= 2 && !this.cup.noRefill && !this.refill && this.cx > .4) { this.refill = true; this.refillT = 0; this.lo += .1; this.hi = Math.min(.97, this.hi + .1); this.ban.show('Долили!', '#fff', '#3E9FD6', .9, 26); Snd.splash(); }
       if (this.refill) this.refillT += dt;
       if (this.leak) this.spill += dt * 1.1;
       if (Math.abs(this.df) > .5) this.spill += dt * .35; // резкие рывки хвата тоже расплёскивают
@@ -740,13 +795,13 @@ class MugGame {
     skyG(ctx, W, H, ['#FFE7D2', '#FFF3E6', '#FFE3CC']);
     const wx = SW * .5 - 70 * u, wy = H * .1, ww = 140 * u, wh = 110 * u;
     gum(ctx, wx - 8, wy - 8, ww + 16, wh + 16, 18, '#FFFDFA', 4);
-    const sg = ctx.createLinearGradient(0, wy, 0, wy + wh); sg.addColorStop(0, '#BFE6F5'); sg.addColorStop(1, '#FFF1D6'); rr(ctx, wx, wy, ww, wh, 12); ctx.fillStyle = sg; ctx.fill();
+    const sg = ctx.createLinearGradient(0, wy, 0, wy + wh); sg.addColorStop(0, NIGHT() ? '#1F2A4A' : '#BFE6F5'); sg.addColorStop(1, NIGHT() ? '#3A3560' : '#FFF1D6'); rr(ctx, wx, wy, ww, wh, 12); ctx.fillStyle = sg; ctx.fill();
     ctx.save(); rr(ctx, wx, wy, ww, wh, 12); ctx.clip(); sun(ctx, wx + ww * .72, wy + wh * .36, 14 * u); cloud(ctx, wx + ww * .12 + Math.sin(t * .2) * 8, wy + wh * .55, .5 * u, .9); ctx.restore();
     ctx.fillStyle = '#FFFDFA'; ctx.fillRect(wx + ww / 2 - 3, wy, 6, wh); ctx.fillRect(wx, wy + wh / 2 - 3, ww, 6);
     gum(ctx, SW * .06, H * .42, SW * .3, 10 * u, 5, '#E7B98F', 4); // полка
     [[.1, '#9ED8B5'], [.19, '#F7B7A3'], [.28, '#C8B6F2']].forEach(([x, col]) => gum(ctx, SW * x, H * .42 - 26 * u, 18 * u, 26 * u, 6, col, 2));
     // ---- стол и подставки ----
-    gum(ctx, -20, ty + 10 * u, W + 40, H - ty, 18, '#E9B98C', 6);
+    gum(ctx, -20, ty + 10 * u, W + 40, H - ty, 18, nt('#E9B98C', .4), 6);
     ctx.fillStyle = 'rgba(160,100,60,.12)'; for (let k = 0; k < 6; k++) ctx.fillRect(0, ty + 26 * u + k * 14 * u, W, 2);
     const x0 = SW * .24, x1 = SW * .76;
     shadowE(ctx, x0, ty + 12 * u, 38 * u, 7 * u, .12);
@@ -799,6 +854,23 @@ class MugGame {
 }
 function cupSprite(ctx, x, y, s, cup, fill, tilt = 0, squeeze = 0, crack = 0, t = 0) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(tilt); ctx.scale(1 - squeeze, 1 + squeeze * .4);
+  if (cup.k === 'egg') {
+    const h = s * .95, w = s * .7, g = ctx.createRadialGradient(-w * .25, -h * .7, s * .05, 0, -h * .5, h * .7); g.addColorStop(0, '#FFFDF7'); g.addColorStop(1, cup.c);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, -h * .48, w * .5, h * .5, 0, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(160,120,80,.35)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.ellipse(-w * .16, -h * .7, w * .1, h * .14, -.4, 0, 7); ctx.fill();
+    if (crack) { ctx.strokeStyle = '#8C6A4A'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(-w * .5, -h * .5); for (let k = 0; k < 6; k++) ctx.lineTo(-w * .5 + k * w * .2, -h * (.5 + (k % 2 ? .08 : -.06))); ctx.stroke(); ctx.fillStyle = '#FFC93C'; ctx.beginPath(); ctx.ellipse(0, -2, w * .4, h * .1, 0, 0, 7); ctx.fill(); }
+    ctx.restore(); return;
+  }
+  if (cup.k === 'jar') {
+    const w = s * 1.05, h = s * 1.2;
+    ctx.fillStyle = 'rgba(200,225,235,.5)'; rr(ctx, -w / 2, -h, w, h, w * .18); ctx.fill();
+    ctx.save(); rr(ctx, -w / 2 + 3, -h * (.08 + .74 * fill), w - 6, h * (.08 + .74 * fill) - 3, w * .15); ctx.fillStyle = cup.c; ctx.fill(); ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; rr(ctx, -w * .34, -h * .86, w * .1, h * .6, 4); ctx.fill();
+    gum(ctx, -w * .46, -h - s * .2, w * .92, s * .24, 5, '#F2B33A', 2);
+    ctx.fillStyle = '#FFFDFA'; rr(ctx, -w * .3, -h * .55, w * .6, h * .24, 4); ctx.fill();
+    if (crack) { ctx.strokeStyle = '#3B2F2A'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(w * .1, -h); ctx.lineTo(-w * .05, -h * .6); ctx.lineTo(w * .12, -h * .3); ctx.stroke(); }
+    ctx.restore(); return;
+  }
   const w = s * (cup.k === 'paper' ? .9 : 1), h = s * 1.15, top = -h, bw = cup.k === 'mug' ? w : w * .8;
   // ручка
   if (cup.k === 'mug') { ctx.strokeStyle = shade(cup.c, -.12); ctx.lineWidth = s * .14; ctx.beginPath(); ctx.ellipse(w * .55, -h * .52, s * .26, s * .3, 0, -1.4, 1.4); ctx.stroke(); }
@@ -818,6 +890,65 @@ function cupSprite(ctx, x, y, s, cup, fill, tilt = 0, squeeze = 0, crack = 0, t 
   if (cup.k === 'mug' && fill > .2 && !crack) { ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; for (let k = -1; k <= 1; k++) { const o = (t * .8 + k * .33) % 1; ctx.globalAlpha = 1 - o; ctx.beginPath(); ctx.moveTo(k * s * .2, top - 4 - o * s * .6); ctx.quadraticCurveTo(k * s * .2 + Math.sin(t * 3 + k) * 5, top - 10 - o * s * .9, k * s * .2, top - 16 - o * s * 1.1); ctx.stroke(); } ctx.globalAlpha = 1; }
   if (crack) { ctx.strokeStyle = '#3B2F2A'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(-w * .1, top); ctx.lineTo(w * .05, top + h * .3); ctx.lineTo(-w * .08, top + h * .5); ctx.lineTo(w * .1, top + h * .8); ctx.stroke(); }
   ctx.restore();
+}
+
+/* =================== 4в. БЕЗ ЭКРАНА (голос и звук вместо картинки) ===================
+   Команды звучат голосом и тоном: К1 — низкий, К2 — высокий, покой — мягкий. Экран почти тёмный,
+   чтобы человек смотрел на руку, как в жизни. Команды идут цепочкой без обязательного покоя —
+   тренируется прямое переключение каналов. Уровень 1 — команда видна текстом, 2 — только точка-индикатор,
+   3 — экран пустой. */
+class BlindGame {
+  constructor(lv) {
+    this.diff = lv; this.T = 0; this.done = false; this.fx = new FX(); this.ban = new Banner(); this.endT = 0;
+    this.N = LV(lv, [10, 14, 18]); this.hold = LV(lv, [.6, .9, 1.2]); this.lim = LV(lv, [2.2, 1.8, 1.5]);
+    this.show = lv < 2 ? 'text' : lv < 3 ? 'dot' : 'none';
+    const set = ['CH1', 'CH2', 'REST'].concat(Ctrl.bothOK() && lv >= 2 ? ['BOTH'] : []); this.cmds = [];
+    let prev = 'REST'; for (let i = 0; i < this.N; i++) { const opts = set.filter(x => x !== prev && !(x === 'REST' && i === 0)); prev = pick(opts); this.cmds.push(prev); }
+    this.i = 0; this.ph = 'gap'; this.pt = 0; this.gap = 1.4; this.ok = 0; this.miss = 0; this.wrong = 0; this.rts = []; this.holdT = 0; this.sc = 0; this.flash = null;
+  }
+  resize(W, H) { this.W = W; this.H = H; }
+  progress() { return clamp(this.i / this.N); }
+  hud() { return `${Math.min(this.i + 1, this.N)} / ${this.N}`; }
+  chips() { return [['Команда', `${Math.min(this.i + 1, this.N)} из ${this.N}`], ['Верно', this.ok, '#3DB37A'], ['Не тем каналом', this.wrong, this.wrong ? '#F2A33A' : null]]; }
+  word(c) { const sp = C().mode === 'spppr'; return { CH1: sp ? 'Согни' : 'Сожми', CH2: sp ? 'Разогни' : 'Раскрой', REST: 'Расслабь', BOTH: sp ? 'Пронация' : 'Обе мышцы' }[c]; }
+  hint() { if (this.endT) return ['Готово!', 'ok']; if (this.ph !== 'cue') return 'Слушай команду'; return this.show === 'text' ? [this.word(this.cue), 'act'] : 'Слушай и смотри на руку'; }
+  cueSound(c) {
+    if (c === 'CH1') Snd.tone(330, .22, 'sine', .07); else if (c === 'CH2') Snd.tone(880, .22, 'sine', .06);
+    else if (c === 'BOTH') { Snd.tone(330, .2, 'sine', .05); Snd.tone(880, .2, 'sine', .05); } else Snd.tone(520, .3, 'triangle', .04);
+    Native.say(this.word(c), { force: true, rate: 1.1 });
+  }
+  onState(e) { if (this.ph === 'cue' && e.state !== this.cue && e.state !== 'REST' && e.state !== this.prevCue && !this.wrongNow) { this.wrong++; this.wrongNow = true; } }
+  update(dt, c) {
+    this.T += dt; this.fx.update(dt); this.ban.update(dt); if (this.flash) this.flash.life -= dt;
+    if (this.endT) { this.endT -= dt; if (this.endT <= 0) this.done = true; return; }
+    this.pt += dt;
+    if (this.ph === 'gap') { if (this.pt >= this.gap) { this.prevCue = this.cue; this.cue = this.cmds[this.i]; this.ph = 'cue'; this.pt = 0; this.holdT = 0; this.rt = null; this.wrongNow = false; this.cueSound(this.cue); } return; }
+    if (c.state === this.cue) { if (this.rt == null) this.rt = this.pt; this.holdT += dt; } else this.holdT = Math.max(0, this.holdT - dt * 2);
+    if (this.holdT >= this.hold) {
+      this.ok++; this.rts.push(this.rt); Mission.ev('blind:ok'); this.sc += Math.round(100 + Math.max(0, this.lim - this.rt) * 120 * this.diff); Snd.ok(); this.flash = { ok: true, life: .5 };
+      this.next(); return;
+    }
+    if (this.pt > this.lim + this.hold + .4) { this.miss++; Snd.bad(); this.flash = { ok: false, life: .6 }; this.next(); }
+  }
+  next() { this.i++; this.ph = 'gap'; this.pt = 0; this.gap = .55 + Math.random() * .4; if (this.i >= this.N) { this.endT = 1.4; Snd.win(); } }
+  get score() { return this.sc; }
+  draw(ctx) {
+    const W = this.W, H = this.H, cx = W / 2, cy = H * .45, t = this.T;
+    ctx.fillStyle = '#0E0F16'; ctx.fillRect(0, 0, W, H);
+    txt(ctx, `${Math.min(this.i + 1, this.N)} / ${this.N}`, cx, 26, 13, 'rgba(255,255,255,.28)', 800);
+    if (this.flash && this.flash.life > 0) glow(ctx, cx, cy, Math.max(W, H) * .6, this.flash.ok ? '#3DB37A' : '#EE5D5D', .25 * this.flash.life);
+    if (this.ph === 'cue') {
+      const col = ST[this.cue].hex, k = clamp(this.holdT / this.hold);
+      if (this.show === 'text') { txt(ctx, this.word(this.cue).toUpperCase(), cx, cy, Math.min(42, W * .1), rgba(col, .85)); chMark(ctx, { CH1: 0, CH2: 1, BOTH: 2 }[this.cue] ?? -1, cx, cy + 46, 9, rgba(col, .85)); }
+      if (this.show !== 'none') { ctx.strokeStyle = rgba(col, .5); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy + (this.show === 'text' ? 110 : 0), 26, -Math.PI / 2, -Math.PI / 2 + 6.283 * k); ctx.stroke(); }
+    } else if (this.show !== 'none' || this.i === 0) txt(ctx, this.i === 0 ? 'Положи телефон и смотри на руку' : '…', cx, cy, 15, 'rgba(255,255,255,.35)', 800);
+    if (this.endT) txtO(ctx, 'Готово!', cx, cy, 34, '#fff', '#3DB37A', 7);
+    this.fx.draw(ctx);
+  }
+  result() {
+    const acc = this.ok / this.N, rt = this.rts.length ? this.rts.reduce((a, b) => a + b, 0) / this.rts.length : null;
+    return { score: this.score, acc: clamp(acc - this.wrong * .02), win: acc >= .6, react: rt != null ? rt * 1000 : undefined, extra: [['Верно', `${this.ok} / ${this.N}`], ['Средняя реакция', rt != null ? Math.round(rt * 1000) + ' мс' : '—'], ['Не тем каналом', this.wrong], ['Пропущено', this.miss], ['Экран', this.show === 'text' ? 'с подсказкой' : this.show === 'dot' ? 'только индикатор' : 'выключен']] };
+  }
 }
 
 /* =================== 5. РЕАКЦИЯ (go/no-go, скорость, изоляция) =================== */
@@ -913,7 +1044,7 @@ class ReactGame {
     if (this.ph === 'wait') {
       for (let q = 0; q < 2; q++) { const p = ((now + q * .8) % 1.6) / 1.6; ctx.strokeStyle = `rgba(242,163,58,${.45 * (1 - p)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, R * (.55 + p * .45), 0, 7); ctx.stroke(); }
       drawHand(ctx, 'relax', cx, cy, R * 1.45, .32);
-      txt(ctx, 'Приготовься…', tx, ty, 22 * s, '#3B2F2A'); txt(ctx, 'держи обе мышцы расслабленными', tx, ty + 26 * s, 13 * s, '#9C8B7F', 800);
+      txt(ctx, 'Приготовься…', tx, ty, 22 * s, ink('#3B2F2A')); txt(ctx, 'держи обе мышцы расслабленными', tx, ty + 26 * s, 13 * s, ink('#9C8B7F'), 800);
     } else if (this.ph === 'cue') {
       const [c, im, label, sub] = M[this.cue], lim = this.cue === 'NOGO' ? 1.3 : this.lim, k = clamp(this.t / lim);
       const gg = ctx.createRadialGradient(cx, cy - R * .3, R * .1, cx, cy, R); gg.addColorStop(0, shade(c, .35)); gg.addColorStop(1, c);
@@ -921,7 +1052,7 @@ class ReactGame {
       ctx.strokeStyle = c; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy, R + 2, -Math.PI / 2, -Math.PI / 2 + 6.283 * (1 - k)); ctx.stroke(); ctx.lineCap = 'butt';
       const s0 = 1 + Math.max(0, .18 - this.t) * 1.6; drawHand(ctx, im, cx, cy, R * 1.5 * s0);
       const big = this.cue === 'BOTH' && C().mode === 'emg' ? 'ОБЕ МЫШЦЫ' : label, pw = Math.min(W - 40, 230 * s); rr(ctx, tx - pw / 2, ty - 23 * s, pw, 46 * s, 23 * s); ctx.fillStyle = c; ctx.fill();
-      txt(ctx, big, tx, ty + 1, 24 * s, '#fff'); txt(ctx, sub, tx, ty + 40 * s, 13 * s, '#9C8B7F', 800);
+      txt(ctx, big, tx, ty + 1, 24 * s, '#fff'); txt(ctx, sub, tx, ty + 40 * s, 13 * s, ink('#9C8B7F'), 800);
     } else if (this.fb) {
       ball(ctx, cx, cy, R * .56, this.fb.ok ? '#7FD3A8' : '#FF8A80');
       ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(7, R * .09); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
@@ -932,8 +1063,8 @@ class ReactGame {
         const bw = Math.min(220 * s, W - 60), bx = tx - bw / 2, by = ty + 26 * s, k = clamp(this.fb.rt / (this.lim * 1000));
         rr(ctx, bx, by, bw, 8, 4); ctx.fillStyle = 'rgba(120,90,80,.14)'; ctx.fill();
         const gr = ctx.createLinearGradient(bx, 0, bx + bw, 0); gr.addColorStop(0, '#3DB37A'); gr.addColorStop(.5, '#FFC24B'); gr.addColorStop(1, '#EE5D5D'); rr(ctx, bx, by, Math.max(8, bw * k), 8, 4); ctx.fillStyle = gr; ctx.fill();
-        ball(ctx, bx + Math.max(4, bw * k), by + 4, 7, '#fff'); txt(ctx, this.fb.sub, tx, by + 24 * s, 13 * s, '#9C8B7F', 800);
-      } else if (this.fb.sub) txt(ctx, this.fb.sub, tx, ty + 30 * s, 13.5 * s, '#9C8B7F', 800);
+        ball(ctx, bx + Math.max(4, bw * k), by + 4, 7, '#fff'); txt(ctx, this.fb.sub, tx, by + 24 * s, 13 * s, ink('#9C8B7F'), 800);
+      } else if (this.fb.sub) txt(ctx, this.fb.sub, tx, ty + 30 * s, 13.5 * s, ink('#9C8B7F'), 800);
     }
     this.fx.draw(ctx);
     // дорожка попыток
@@ -1014,16 +1145,16 @@ class SchoolGame {
     const pc = s.k === 'st' ? ST[s.st].hex : s.k === 'g' ? '#3DB37A' : s.k === 'zone' ? '#3DB37A' : s.k === 'seq' ? '#9B78E8' : '#B9A99B';
     ctx.strokeStyle = this.pause > 0 ? '#3DB37A' : pc; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy, R + 4, -Math.PI / 2, -Math.PI / 2 + 6.283 * clamp(s.k === 'seq' ? this.si / s.seq.length : this.p)); ctx.stroke(); ctx.lineCap = 'butt';
     drawHand(ctx, s.im, cx, cy, R * 1.6 * (1 + Math.sin(now * 3) * .015));
-    const ty = cy + R + 44; txt(ctx, s.t, cx, ty, 24, '#3B2F2A');
+    const ty = cy + R + 44; txt(ctx, s.t, cx, ty, 24, ink('#3B2F2A'));
     if (s.k === 'seq') s.seq.forEach((q, k) => { const x = cx - 46 + k * 46, y = ty + 38; ball(ctx, x, y, 14, k < this.si ? '#3DB37A' : ST[q].hex); txt(ctx, q === 'CH1' ? 'К1' : 'К2', x, y + 1, 10.5, '#fff'); });
     // две горизонтальные шкалы мышц
     const bw = Math.min(W - 64, 420), bx = (W - bw) / 2;
     [[0, H - 58, '#F27D45', 'К1'], [1, H - 28, '#3E9FD6', 'К2']].forEach(([i, y, col, l]) => {
-      txt(ctx, l, bx - 16, y, 12, col);
-      rr(ctx, bx, y - 7, bw, 14, 7); ctx.fillStyle = '#EDE3D8'; ctx.fill();
+      txt(ctx, l, bx - 16, y, 12, col); chMark(ctx, i, bx + bw + 14, y, 5, col);
+      rr(ctx, bx, y - 7, bw, 14, 7); ctx.fillStyle = NIGHT() ? 'rgba(255,255,255,.14)' : '#EDE3D8'; ctx.fill();
       if (s.k === 'zone' && i === (s.ch || 0)) { rr(ctx, bx + bw * s.lo, y - 7, bw * (s.hi - s.lo), 14, 7); ctx.fillStyle = 'rgba(61,179,122,.35)'; ctx.fill(); }
       const v = clamp(Ctrl.a[i]); if (v > .01) { rr(ctx, bx, y - 7, bw * v, 14, 7); ctx.fillStyle = col; ctx.fill(); }
-      const tx = bx + bw * C()['thr' + (i + 1)]; ctx.fillStyle = 'rgba(59,47,42,.45)'; ctx.fillRect(tx - 1, y - 10, 2, 20);
+      const tx = bx + bw * C()['thr' + (i + 1)]; ctx.fillStyle = NIGHT() ? 'rgba(255,255,255,.55)' : 'rgba(59,47,42,.45)'; ctx.fillRect(tx - 1, y - 10, 2, 20);
     });
     this.fx.draw(ctx);
     this.ban.draw(ctx, cx, cy);
@@ -1043,6 +1174,8 @@ const GAMES = {
     goal: lv => `Поймать ${LV(lv, [3, 4, 5])} рыбы`, ctl: [['Покой', 'ждём поклёвку — не шевелись', '#C8BAAE'], ['К1 рывок', 'подсечка, когда клюёт', '#F27D45'], ['Сила К1', 'подтянуть — зона вверх', '#F27D45'], ['Сила К2', 'отпустить — зона вниз', '#3E9FD6']] },
   mug: { cls: MugGame, tone: 'rose', t: 'Горячая кружка', d: 'Возьми, донеси и поставь кружку: не раздави, не урони, не пролей', skill: 'Дозирование хвата', tile: 't-rose', ic: 'cup',
     goal: lv => `Донести ${LV(lv, [4, 5, 6])} кружки до подставки`, ctl: [['К2', 'раскрыть кисть перед кружкой и чтобы поставить', '#3E9FD6'], ['К1', 'сжать до зелёной зоны хвата', '#F27D45'], ['Покой', 'протез держит хват — неси спокойно', '#C8BAAE'], ['Обе', 'нельзя: чай расплёскивается', '#EE5D5D']] },
+  blind: { cls: BlindGame, tone: 'lilac', t: 'Без экрана', d: 'Команды звучат голосом — смотри на руку, а не на телефон', skill: 'Связь «мышца — действие»', tile: 't-lilac', ic: 'ear',
+    goal: lv => `Выполнить ${LV(lv, [10, 14, 18])} команд, ≥60% верно · ${lv < 2 ? 'команда видна текстом' : lv < 3 ? 'на экране только индикатор' : 'экран выключен'}`, ctl: [['К1', 'низкий тон — «сожми»', '#F27D45'], ['К2', 'высокий тон — «раскрой»', '#3E9FD6'], ['Покой', 'мягкий тон — «расслабь»', '#C8BAAE'], ['Звук', 'включите звук телефона', '#9B78E8']] },
   react: { cls: ReactGame, tone: 'sun', t: 'Реакция', d: 'Сожми, раскрой или замри — как можно быстрее', skill: 'Скорость и изоляция', tile: 't-sun', ic: 'bolt',
     goal: lv => `${LV(lv, [12, 16, 20])} сигналов, ≥60% верно`, ctl: [['К1', '«Сожми»', '#F27D45'], ['К2', '«Раскрой»', '#3E9FD6'], ['Покой', '«Замри» и ожидание', '#EE5D5D'], ['Обе', '«Обе мышцы» (уровень 3)', '#9B78E8']] },
   school: { cls: SchoolGame, tone: 'rose', tut: true, t: 'Школа управления', d: 'Короткие шаги: покой, К1, К2, сила каждой мышцы, чередование, обе мышцы', skill: 'Обучение', tile: 't-mint', ic: 'info',
@@ -1083,6 +1216,10 @@ function gamePreview(id, ctx, W, H, t) {
     const bx = W * .5, by = wy + 3 + bob * 2; ctx.strokeStyle = '#8A5A3A'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(W * .12, H * .8); ctx.quadraticCurveTo(W * .2, H * .2, W * .32, H * .14); ctx.stroke();
     ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(W * .32, H * .14); ctx.quadraticCurveTo(bx - 20, wy - 20, bx, by); ctx.stroke();
     ball(ctx, bx, by, 6, '#FF6B6B'); fishSprite(ctx, W * .62 + bob * 14, H * .8, 18, '#F2B33A', Math.cos(t * 1.1) > 0 ? 1 : -1, t);
+  } else if (id === 'blind') {
+    ctx.fillStyle = '#0E0F16'; ctx.fillRect(0, 0, W, H);
+    for (let q = 0; q < 3; q++) { const p = ((t * .6 + q / 3) % 1); ctx.strokeStyle = `rgba(181,151,255,${.6 * (1 - p)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(W / 2, H / 2, 10 + p * Math.min(W, H) * .45, -.8, .8); ctx.stroke(); ctx.beginPath(); ctx.arc(W / 2, H / 2, 10 + p * Math.min(W, H) * .45, Math.PI - .8, Math.PI + .8); ctx.stroke(); }
+    ball(ctx, W / 2, H / 2, 8, '#B597FF');
   } else if (id === 'mug') {
     skyG(ctx, W, H, ['#FFE7D2', '#FFF3E6']); const ty = H * .78; gum(ctx, -10, ty, W + 20, H, 10, '#E9B98C', 4);
     const k = (t * .35) % 1, x = lerp(W * .25, W * .75, easeOut(clamp(k * 1.4))), y = ty - Math.sin(Math.PI * clamp(k * 1.4)) * H * .25;

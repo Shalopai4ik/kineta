@@ -224,7 +224,7 @@ if (Cap) {
 if (S.device.real) { S.device.connected = false; save(); }
 if (qs.get('demo') === '0' && S.demo) { S.stats = { days: {}, gestTotal: {}, seeded: false }; S.history = []; S.games = {}; S.profile.xp = 0; S.profile.streak = 0; S.demo = false; save(true); }
 if (S.demo) { document.body.classList.add('demo'); $('#phone').insertAdjacentHTML('beforeend', '<div id="demoTag" title="Статистика заполнена демо-данными. Сброс: Профиль → Сбросить статистику">Демо-данные</div>'); }
-applyTheme(); applyMirror(); renderEmu(); Ctrl.restart(); Mission.ensure();
+applyTheme(); applyMirror(); applyBig(); renderEmu(); Ctrl.restart(); Mission.ensure();
 if (C().remote) Remote.connect(C().remote);
 App.go(S.onboarded ? 'home' : 'onboard', {}, { fade: true });
 if (S.onboarded) touchStreak();

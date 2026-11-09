@@ -19,7 +19,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 const uid = () => Math.random().toString(36).slice(2, 9);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const easeOut = t => 1 - Math.pow(1 - t, 3);
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.3.0';
 
 /* ---------------- Шина событий ---------------- */
 const Bus = {
@@ -48,6 +48,14 @@ const DEF_GESTURES = [
 
 /* ---------------- Хранилище ---------------- */
 const KEY = 'kineta.app.v2';
+/* Палитры руки протеза (интерфейс — CSS-переменные --hand-*, игры — SVG на canvas).
+   «Титан» по умолчанию: холодный корпус хорошо читается на тёплом кремовом фоне. */
+const HAND_PALS = {
+  titan: { n: 'Титан', skin: '#EEF2F7', shade: '#C3CEDB', edge: '#6F7C8F', cuff: '#3A4454' },
+  graphite: { n: 'Графит', skin: '#7C8594', shade: '#555E6C', edge: '#2B313A', cuff: '#1F242B' },
+  warm: { n: 'Тёплый', skin: '#F4D7C2', shade: '#DDAE8E', edge: '#9A6A4E', cuff: '#5B4336' },
+  bright: { n: 'Яркий', skin: '#FFC09A', shade: '#F28C5A', edge: '#B4542A', cuff: '#2F7FB8' }
+};
 const DEF = {
   onboarded: false,
   perms: { bt: 'none', geo: 'none' },
@@ -61,6 +69,9 @@ const DEF = {
     // spGest — словарь СПППР: 2 жеста + нейтраль или 6 жестов + нейтраль; hand — сторона протеза (здоровая рука — противоположная)
     coMode: 'both', thrSrc: 'game', devThr: [97, 89], spGest: 6, hand: 'left', sessionMin: 10, remote: '',
     sound: true, vibro: true, voice: false, mirror: false, theme: 'light',
+    // theme: 'light' | 'dark' | 'auto' (как в системе); handPal — цвет руки протеза; big — крупный режим;
+    // shapes — формы каналов (К1 круг, К2 квадрат) для различения без цвета; quickCal — проверка датчиков перед игрой
+    handPal: 'titan', big: false, shapes: true, quickCal: true,
     ble: { namePrefix: '', service: '', emgChar: '', cmdChar: '', format: 'u16le2', fullScale: 4095 },
     emu: { noise: .03, crosstalk: .06, rise: 1.8, fall: 3.0, jMin: 10, jMax: 110, loss: .05, burst: .01, misclass: .04 }
   },
@@ -68,7 +79,8 @@ const DEF = {
   profile: { name: 'Алексей', xp: 0, streak: 0, lastDay: null, goalMin: 15 },
   gestures: null, rotation: ['natural', 'fist', 'pinch', 'point'], activeId: 'natural',
   stats: { days: {}, gestTotal: {}, seeded: false },
-  games: {}, history: [], ach: {}, demo: null
+  games: {}, history: [], ach: {}, demo: null,
+  workshop: { parts: 0, built: 0, log: [] }, weekly: {}
 };
 function merge(a, b) { for (const k in b) { if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) merge(a[k], b[k]); else a[k] = b[k]; } return a; }
 let S;
@@ -207,6 +219,14 @@ const IC = {
   heart: '<path d="M12 20s-8-4.5-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 9c0 6.5-8 11-8 11z"/>',
   calib: '<circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
   music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  voice: '<path d="M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z"/><path d="M5 11a7 7 0 0014 0M12 18v3"/>',
+  ear: '<path d="M7 9a5 5 0 0110 0c0 3-3 4-3 7a3 3 0 01-6 0"/><path d="M10 9a2 2 0 014 0"/>',
+  robot: '<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  palette: '<path d="M12 3a9 9 0 100 18c1 0 1.5-.8 1.5-1.6 0-1.4-1.3-1.9-1.3-3 0-1 .8-1.4 1.8-1.4H17a4 4 0 004-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
+  text: '<path d="M4 18L9 6l5 12M5.8 14h6.4M15 18l3-7 3 7M15.8 16h4.4"/>',
+  shapes: '<circle cx="7" cy="7" r="4"/><rect x="13" y="13" width="8" height="8" rx="1.5"/><path d="M17 3l4 4-4 4-4-4z"/>',
+  flow: '<path d="M3 12h3l2-5 3 10 2-5h2"/><circle cx="19" cy="12" r="2.5"/>',
   cup: '<path d="M4 8h12v6a5 5 0 01-5 5H9a5 5 0 01-5-5V8z"/><path d="M16 10h1.5a2.5 2.5 0 010 5H16"/><path d="M8 2.5c-.6.8.6 1.7 0 2.5M12 2.5c-.6.8.6 1.7 0 2.5"/>',
   fish: '<path d="M2 12c3-4 7-6 11-6 4 0 7 3 9 6-2 3-5 6-9 6-4 0-8-2-11-6zM2 12l-1-4M2 12l-1 4"/><circle cx="16" cy="11" r="1"/>',
   car: '<path d="M5 17h14v-5l-2-5H7l-2 5z"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/><path d="M5 12h14"/>',
