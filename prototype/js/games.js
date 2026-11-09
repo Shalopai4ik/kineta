@@ -12,7 +12,7 @@ const imgOk = i => i && i.complete && i.naturalWidth;
 const HAND_IMG = {};
 function handImg(key, pose) {
   if (HAND_IMG[key]) return HAND_IMG[key];
-  const vars = { '--hand-skin': '#FFFDFA', '--hand-shade': '#F1E7DD', '--hand-edge': '#D9CABC', '--hand-cuff': '#F4ECE3', '--primary': '#EE7A45' };
+  const vars = { '--hand-skin': '#EEF2F7', '--hand-shade': '#C3CEDB', '--hand-edge': '#6F7C8F', '--hand-cuff': '#3A4454', '--primary': '#EE7A45' }; // те же цвета, что --hand-* в app.css
   let svg = handSVG(pose).replace(/var\((--[a-z-]+)\)/g, (m, v) => vars[v] || '#999');
   if (!/width=/.test(svg.slice(0, 120))) svg = svg.replace('<svg ', '<svg width="368" height="544" ');
   const i = new Image(); i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); HAND_IMG[key] = i; return i;
@@ -21,7 +21,7 @@ const POSES = { fist: [70, 96, 96, 96, 96, 55], open: [0, 0, 0, 0, 0, 15], relax
 const handFor = k => handImg(k, POSES[k]);
 function drawHand(ctx, key, x, y, h, alpha = 1) {
   const im = handFor(key); if (!imgOk(im)) return;
-  const w = h * 184 / 272; ctx.globalAlpha = alpha; ctx.drawImage(im, x - w / 2, y - h / 2, w, h); ctx.globalAlpha = 1;
+  const w = h * 184 / 272; ctx.save(); ctx.globalAlpha = alpha; ctx.shadowColor = 'rgba(40,52,72,.28)'; ctx.shadowBlur = h * .06; ctx.shadowOffsetY = h * .02; ctx.drawImage(im, x - w / 2, y - h / 2, w, h); ctx.restore();
 }
 const GFONT = 'Nunito, system-ui, sans-serif';
 
@@ -764,7 +764,7 @@ class MugGame {
     const hx = this.ph === 'reach' ? lerp(-60 * u, cx - s * .95, easeOut(this.cx)) : this.ph === 'placed' || this.ph === 'fail' ? cx - s * .95 - this.pt * 160 * u : cx - s * .95;
     const hy = (holding || this.ph === 'reach' ? cy : ty) - s * .75;
     const key = 'mug' + Math.round(this.f * 12), im = handImg(key, MUG_POSE(Math.round(this.f * 12) / 12));
-    if (imgOk(im)) { const hh = s * 3.1, hw = hh * 184 / 272; ctx.save(); ctx.translate(hx, hy); ctx.rotate(Math.PI / 2 - .15); ctx.drawImage(im, -hw / 2, -hh * .62, hw, hh); ctx.restore(); }
+    if (imgOk(im)) { const hh = s * 3.1, hw = hh * 184 / 272; ctx.save(); ctx.translate(hx, hy); ctx.rotate(Math.PI / 2 - .15); ctx.shadowColor = 'rgba(40,52,72,.3)'; ctx.shadowBlur = 10 * u; ctx.shadowOffsetX = 3 * u; ctx.drawImage(im, -hw / 2, -hh * .62, hw, hh); ctx.restore(); }
     this.fx.draw(ctx);
     this.ban.draw(ctx, SW / 2, H * .34);
     // ---- слоты донесённых кружек ----

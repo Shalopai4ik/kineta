@@ -15,7 +15,8 @@
   --t-peach-i:#D06A35; --t-sun-i:#B88A12; --t-mint-i:#2F925F; --t-sky-i:#3678B4; --t-lilac-i:#7559C9; --t-rose-i:#C9506C;
   --ch1:#EE7A45; --ch2:#3E9FD6; --both:#9B78E8; --rest:#C8BAAE;
   --shadow:0 1px 2px rgba(110,70,40,.05),0 6px 18px rgba(110,70,40,.06); --shadow-lg:0 16px 40px rgba(110,70,40,.16);
-  --hand-skin:#FFFDFA; --hand-shade:#F1E7DD; --hand-edge:#D9CABC; --hand-cuff:#F4ECE3;
+  /* рука протеза — холодный «титан» на тёплом фоне, чтобы силуэт не сливался с кремовыми карточками */
+  --hand-skin:#EEF2F7; --hand-shade:#C3CEDB; --hand-edge:#6F7C8F; --hand-cuff:#3A4454;
   --r:20px; --ease:cubic-bezier(.2,.9,.25,1); --spring:cubic-bezier(.34,1.4,.64,1);
   --s1:#EE7A45; --s2:#3E9FD6; --s3:#36A872; --s4:#E3AE2D; --s5:#DD6E96; --s6:#9B78E8; --s7:#2BAAA8; --s8:#D9574B;
   --font:'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -29,7 +30,7 @@
   --t-peach-i:#FFB487; --t-sun-i:#F5CF6B; --t-mint-i:#82D9A8; --t-sky-i:#8EC4EE; --t-lilac-i:#C0AAFF; --t-rose-i:#FF9DB2;
   --ch1:#FF9A66; --ch2:#5DB6EA; --both:#B597FF; --rest:#6D5F55;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); --shadow-lg:0 16px 40px rgba(0,0,0,.45);
-  --hand-skin:#F6EFE8; --hand-shade:#DCD0C5; --hand-edge:#9E8E81; --hand-cuff:#E3D8CD;
+  --hand-skin:#E8EDF4; --hand-shade:#AEBACA; --hand-edge:#5F6B7D; --hand-cuff:#2B3340;
   color-scheme:dark;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
