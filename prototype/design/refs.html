@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kineta — референсы</title>
+<link rel="icon" href="../img/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--primary:#7B66F6;--accent:#5ED7B8;--text:#2E2A47;--muted:#8A87A3;--bg:#F7F6FC;--line:#ECEAF6}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg)}
+header{padding:40px 16px 24px;max-width:1200px;margin:0 auto;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+header img{height:52px}
+header h1{font-size:28px;margin:0}header p{margin:4px 0 0;color:var(--muted)}
+main{max-width:1200px;margin:0 auto;padding:0 16px 60px}
+section{background:#fff;border-radius:24px;padding:24px;margin-bottom:20px;box-shadow:0 6px 24px rgba(91,76,196,.08)}
+h2{margin:0 0 4px;font-size:20px}.lead{color:var(--muted);margin:0 0 18px;font-size:14px;line-height:1.5}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px}
+.item{background:var(--bg);border-radius:16px;padding:12px;text-align:center;font-size:12px;color:var(--muted)}
+.item img{width:100%;height:96px;object-fit:contain;display:block;margin-bottom:8px}
+.item.big img{height:150px}
+.item code{font-size:11px;color:var(--primary)}
+.sw{display:flex;gap:12px;flex-wrap:wrap}
+.sw div{width:120px;border-radius:16px;overflow:hidden;background:var(--bg);font-size:12px}
+.sw i{display:block;height:64px}.sw span{display:block;padding:8px 10px}
+.screens{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.screens figure{margin:0}.screens img{width:100%;border-radius:22px;box-shadow:0 10px 30px rgba(91,76,196,.15);display:block}
+.screens figcaption{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:99px;background:#EEEBFF;color:var(--primary);margin-left:8px;vertical-align:middle}
+.tag.own{background:#E3F8F2;color:#1F9E7E}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.rules div{background:var(--bg);border-radius:16px;padding:14px;font-size:13px;line-height:1.5}
+.rules b{display:block;margin-bottom:4px;font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <img src="../img/logo.webp" alt="kineta">
+  <div><h1>Референсы и графика</h1><p>Визуальный язык игры-тренажёра: что взято из дизайн-системы Kineta, а что нарисовано для игры.</p></div>
+</header>
+<main>
+
+<section>
+  <h2>Принципы стиля</h2>
+  <p class="lead">Ориентиры взяты из макетов Kineta в папке <code>assets/</code>: пастельная гамма, мягкие тени, скругления 20–28 px, серебристо-белая бионическая рука и дружелюбный робот-помощник.</p>
+  <div class="rules">
+    <div><b>Каналы различаются цветом</b>Фиолетовый — К1 (сгибатели, «сжать»), бирюзовый — К2 (разгибатели, «раскрыть»), оранжевый — обе мышцы сразу, серый — покой. Цвета одинаковы во всех уровнях, шкалах и подсказках.</div>
+    <div><b>Изображение кисти = команда</b>Позы бионической руки из ассетов показывают, какое действие выполнит протез: пользователь связывает мышцу с движением кисти, а не с абстрактной кнопкой.</div>
+    <div><b>Спокойная обратная связь</b>Ошибка показывается мягко (красный акцент и маскот «Поддержка»), без резких вспышек. Пользователь может устать, поэтому интерфейс не давит.</div>
+    <div><b>Минимум элементов</b>Во время игры видны только сцена, две шкалы с линией порога и чип текущего состояния. Без мультитача и мелких кнопок.</div>
+  </div>
+</section>
+
+<section>
+  <h2>Палитра</h2>
+  <p class="lead">Цвета дизайн-системы Kineta и игровые цвета каналов.</p>
+  <div class="sw">
+    <div><i style="background:#7B66F6"></i><span><b>#7B66F6</b><br>Основной · К1</span></div>
+    <div><i style="background:#22B8CF"></i><span><b>#22B8CF</b><br>К2</span></div>
+    <div><i style="background:#FFA94D"></i><span><b>#FFA94D</b><br>Обе мышцы</span></div>
+    <div><i style="background:#5ED7B8"></i><span><b>#5ED7B8</b><br>Акцент</span></div>
+    <div><i style="background:#4CD964"></i><span><b>#4CD964</b><br>Успех / зона</span></div>
+    <div><i style="background:#FF6B6B"></i><span><b>#FF6B6B</b><br>Ошибка</span></div>
+    <div><i style="background:#F7F6FC;border-bottom:1px solid var(--line)"></i><span><b>#F7F6FC</b><br>Фон</span></div>
+    <div><i style="background:#2E2A47"></i><span><b>#2E2A47</b><br>Текст</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Собственная графика <span class="tag own">нарисовано для игры · SVG</span></h2>
+  <p class="lead">В ассетах не было этих элементов, поэтому они нарисованы в том же стиле. Векторная графика остаётся чёткой на любом экране и весит считанные килобайты.</p>
+  <div class="grid">
+    <div class="item big"><img src="../img/own/drone.svg" alt=""><b>Дрон-помощник</b><br><code>own/drone.svg</code><br>герой уровня 3, лицо от маскота</div>
+    <div class="item big"><img src="../img/own/muscle.svg" alt=""><b>Предплечье ЭМГ</b><br><code>own/muscle.svg</code><br>подсвечивает активную группу мышц</div>
+    <div class="item big"><img src="../img/own/shield.svg" alt=""><b>Щит</b><br><code>own/shield.svg</code><br>команда «обе мышцы»</div>
+    <div class="item big"><img src="../img/own/flame.svg" alt=""><b>Серия</b><br><code>own/flame.svg</code></div>
+    <div class="item big"><img src="../img/own/target.svg" alt=""><b>Калибровка</b><br><code>own/target.svg</code></div>
+    <div class="item big"><img src="../img/own/bolt.svg" alt=""><b>Реакция</b><br><code>own/bolt.svg</code></div>
+    <div class="item big"><img src="../img/own/app-icon.svg" alt=""><b>Иконка приложения</b><br><code>own/app-icon.svg</code><br>по мотивам знака Kineta</div>
+  </div>
+  <p class="lead" style="margin-top:16px">Сцены рисуются кодом на canvas: кольца отсчёта, шкала силы с зелёной зоной, колонны и энергобарьеры, частицы, параллакс-холмы. Иконки навигации — линейные SVG в стиле дизайн-системы.</p>
+</section>
+
+<section>
+  <h2>Из дизайн-системы Kineta <span class="tag">вырезано из assets/</span></h2>
+  <p class="lead">Спрайты вырезаны из листов дизайн-системы скриптами в <code>tools/</code>. У цветных объектов фон удалён. Белые объекты (рука, робот) оставлены на родных мягких плашках и вписываются в круги и карточки.</p>
+  <h3 style="font-size:15px">Логотип и позы руки</h3>
+  <div class="grid">
+    <div class="item"><img src="../img/logo.webp" alt=""><code>logo</code></div>
+    <div class="item"><img src="../img/mark.webp" alt=""><code>mark</code></div>
+    <div class="item"><img src="../img/p_relax.webp" alt=""><code>p_relax</code> · покой</div>
+    <div class="item"><img src="../img/p_fist.webp" alt=""><code>p_fist</code> · К1</div>
+    <div class="item"><img src="../img/p_open.webp" alt=""><code>p_open</code> · К2</div>
+    <div class="item"><img src="../img/k_up.webp" alt=""><code>k_up</code></div>
+    <div class="item"><img src="../img/k_point.webp" alt=""><code>k_point</code></div>
+    <div class="item"><img src="../img/k_pinch.webp" alt=""><code>k_pinch</code></div>
+    <div class="item"><img src="../img/g_ballhold.webp" alt=""><code>g_ballhold</code></div>
+    <div class="item"><img src="../img/g_mug.webp" alt=""><code>g_mug</code></div>
+  </div>
+  <h3 style="font-size:15px">Маскот</h3>
+  <div class="grid">
+    <div class="item"><img src="../img/mascot_big.webp" alt=""><code>mascot_big</code> · заставка</div>
+    <div class="item"><img src="../img/m_calm.webp" alt=""><code>m_calm</code> · пауза</div>
+    <div class="item"><img src="../img/m_joy.webp" alt=""><code>m_joy</code> · успех</div>
+    <div class="item"><img src="../img/m_wow.webp" alt=""><code>m_wow</code> · «приготовься»</div>
+    <div class="item"><img src="../img/m_help.webp" alt=""><code>m_help</code> · поддержка</div>
+    <div class="item"><img src="../img/m_show.webp" alt=""><code>m_show</code> · подсказки</div>
+  </div>
+  <h3 style="font-size:15px">Предметы, награды, статусы</h3>
+  <div class="grid">
+    <div class="item"><img src="../img/o_mug.webp" alt=""><code>o_mug</code></div>
+    <div class="item"><img src="../img/o_ball.webp" alt=""><code>o_ball</code></div>
+    <div class="item"><img src="../img/o_cube.webp" alt=""><code>o_cube</code></div>
+    <div class="item"><img src="../img/r_crystal.webp" alt=""><code>r_crystal</code></div>
+    <div class="item"><img src="../img/r_heart.webp" alt=""><code>r_heart</code></div>
+    <div class="item"><img src="../img/r_cup.webp" alt=""><code>r_cup</code></div>
+    <div class="item"><img src="../img/r_novice.webp" alt=""><code>r_novice</code></div>
+    <div class="item"><img src="../img/r_master.webp" alt=""><code>r_master</code></div>
+    <div class="item"><img src="../img/r_expert.webp" alt=""><code>r_expert</code></div>
+    <div class="item"><img src="../img/s_ok.webp" alt=""><code>s_ok</code></div>
+    <div class="item"><img src="../img/s_err.webp" alt=""><code>s_err</code></div>
+    <div class="item"><img src="../img/r_leaf.webp" alt=""><code>r_leaf</code></div>
+  </div>
+  <h3 style="font-size:15px">Локации</h3>
+  <div class="grid">
+    <div class="item"><img src="../img/bg_forest.webp" alt="" style="object-fit:cover;border-radius:10px"><code>bg_forest</code> · уровень 1</div>
+    <div class="item"><img src="../img/bg_city.webp" alt="" style="object-fit:cover;border-radius:10px"><code>bg_city</code> · уровень 2</div>
+    <div class="item"><img src="../img/bg_mount.webp" alt="" style="object-fit:cover;border-radius:10px"><code>bg_mount</code> · уровень 3</div>
+    <div class="item"><img src="../img/bg_space.webp" alt="" style="object-fit:cover;border-radius:10px"><code>bg_space</code> · резерв</div>
+  </div>
+</section>
+
+<section>
+  <h2>Экраны</h2>
+  <p class="lead">Скриншоты прототипа: на ПК слева телефон, справа эмулятор. На телефоне эмулятор закреплён внизу экрана.</p>
+  <div class="screens">
+    <figure><img src="screens/01-home.webp" alt=""><figcaption>Главная</figcaption></figure>
+    <figure><img src="screens/02-train.webp" alt=""><figcaption>Тренировки</figcaption></figure>
+    <figure><img src="screens/03-tutorial.webp" alt=""><figcaption>Обучение</figcaption></figure>
+    <figure><img src="screens/04-level1.webp" alt=""><figcaption>Ур. 1 · Чистый сигнал</figcaption></figure>
+    <figure><img src="screens/05-level2.webp" alt=""><figcaption>Ур. 2 · Горячая кружка</figcaption></figure>
+    <figure><img src="screens/06-level3.webp" alt=""><figcaption>Ур. 3 · Полёт дрона (щит)</figcaption></figure>
+    <figure><img src="screens/07-result.webp" alt=""><figcaption>Результат</figcaption></figure>
+    <figure><img src="screens/08-progress.webp" alt=""><figcaption>Прогресс</figcaption></figure>
+    <figure><img src="screens/09-mobile-level1.webp" alt=""><figcaption>Телефон · уровень 1</figcaption></figure>
+    <figure><img src="screens/10-mobile-home.webp" alt=""><figcaption>Телефон · главная</figcaption></figure>
+  </div>
+</section>
+</main>
+</body>
+</html>

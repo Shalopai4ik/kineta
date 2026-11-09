@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Kineta — тренажёр протеза</title>
+<meta name="description" content="Игра-тренажёр управления бионическим протезом по двум каналам ЭМГ или потоку СПППР">
+<link rel="icon" href="img/own/kineta-icon.svg">
+<meta name="theme-color" content="#FBF4EA">
+
+<link rel="preload" href="fonts/nunito-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="phone">
+  <div id="toasts"></div>
+  <main id="view"></main>
+  <!-- мобильный эмулятор мышц: часть раскладки, ничего не перекрывает -->
+  <div id="mEmu" class="hidden"><button id="mEmuBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12h3l2-6 3 12 3-9 2 6 2-3h5"/></svg>Эмулятор мышц<svg class="car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 15l6-6 6 6"/></svg></button>
+    <div class="mpads"><div class="pad c1" data-ch="0"><div class="fill"></div><span>К1 · закрыть</span><kbd>держи и веди вверх</kbd></div>
+    <div class="pad c2" data-ch="1"><div class="fill"></div><span>К2 · открыть</span><kbd>держи и веди вверх</kbd></div></div></div>
+  <nav class="tabs" id="tabs">
+    <div class="blob"></div>
+    <button data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>Главная</button>
+    <button data-tab="gestures"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V5.5a1.5 1.5 0 013 0V12"/><path d="M11 11V4a1.5 1.5 0 013 0v7"/><path d="M14 11V5.5a1.5 1.5 0 013 0V13"/><path d="M17 9.5a1.5 1.5 0 013 0V15a7 7 0 01-7 7h-1a7 7 0 01-5.6-2.8L3.6 15a1.6 1.6 0 012.5-2L8 15"/></svg>Жесты</button>
+    <button data-tab="sensors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h3l2-6 3 12 3-9 2 6 2-3h5"/></svg>Датчики</button>
+    <button data-tab="games"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5"/><path d="M7 11v3M5.5 12.5h3"/><circle cx="15.5" cy="11.5" r="1"/><circle cx="18" cy="14" r="1"/></svg>Игры</button>
+    <button data-tab="progress"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Прогресс</button>
+  </nav>
+  <canvas id="fx"></canvas>
+  <div id="splash"><div id="splHand"></div><div class="brand big"><span class="bm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V5.5a1.5 1.5 0 013 0V12"/><path d="M11 11V4a1.5 1.5 0 013 0v7"/><path d="M14 11V5.5a1.5 1.5 0 013 0V13"/><path d="M17 9.5a1.5 1.5 0 013 0V15a7 7 0 01-7 7h-1a7 7 0 01-5.6-2.8L3.6 15a1.6 1.6 0 012.5-2L8 15"/></svg></span>kineta</div><p>Твоя рука. Твои возможности.</p></div>
+</div>
+
+<aside id="emu">
+  <h3>Эмулятор мышц <span class="tag warn">демо</span></h3>
+  <p class="sub">Сигнал ЭМГ для прототипа. <b>F</b> — К1 (закрыть), <b>J</b> — К2 (открыть), <b>F+J</b> — обе мышцы (смена жеста). В СПППР на 6 жестов: <b>1–4</b> — пронация, супинация, приведение, отведение. Высота нажатия на панель = сила.</p>
+  <div id="emuMode"></div>
+  <div class="pads">
+    <div class="pad c1" data-ch="0"><div class="fill"></div><div class="thl"></div><span>К1</span><kbd>F · закрыть</kbd></div>
+    <div class="pad c2" data-ch="1"><div class="fill"></div><div class="thl"></div><span>К2</span><kbd>J · открыть</kbd></div>
+  </div>
+  <canvas id="emuScope"></canvas>
+  <div class="stats" id="emuStats"></div>
+  <div id="emuParams" style="margin-top:8px"></div>
+</aside>
+
+<script src="js/native.js"></script>
+<script src="js/core.js"></script>
+<script src="js/hand.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/games.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

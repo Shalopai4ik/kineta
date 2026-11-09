@@ -1,0 +1,11 @@
+<svg width="200" height="120" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120">
+  <!-- собственная иллюстрация: предплечье с двумя группами мышц и электродами ЭМГ -->
+  <defs><linearGradient id="a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE9DC"/><stop offset="1" stop-color="#F6CDB8"/></linearGradient></defs>
+  <path d="M10 40 Q60 24 120 34 L178 44 Q192 60 178 76 L120 88 Q60 98 10 82 Z" fill="url(#a)" stroke="#E8B49B" stroke-width="2"/>
+  <path d="M24 44 Q70 32 120 40 L150 46 Q120 54 70 56 Q40 56 24 50 Z" fill="#7B66F6" opacity=".8"/>
+  <path d="M24 76 Q70 88 120 82 L150 74 Q120 66 70 66 Q40 66 24 72 Z" fill="#22B8CF" opacity=".8"/>
+  <rect x="78" y="22" width="22" height="12" rx="4" fill="#2E2A47"/><circle cx="89" cy="28" r="3" fill="#5ED7B8"/>
+  <rect x="78" y="88" width="22" height="12" rx="4" fill="#2E2A47"/><circle cx="89" cy="94" r="3" fill="#5ED7B8"/>
+  <text x="160" y="22" font-family="Inter,Arial" font-size="12" font-weight="700" fill="#7B66F6">К1</text>
+  <text x="160" y="110" font-family="Inter,Arial" font-size="12" font-weight="700" fill="#22B8CF">К2</text>
+</svg>

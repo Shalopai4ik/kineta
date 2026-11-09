@@ -1,0 +1,28 @@
+# зависимости и сборка
+node_modules/
+mobile/www/
+mobile/dist/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/src/main/assets/public/
+mobile/android/capacitor-cordova-android-plugins/build/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# результаты e2e-прогона (скриншоты, отчёт)
+tests/e2e/out/
+
+# материалы организаторов (крупные файлы) и личный архив
+*.mp4
+*.pptx
+_archive/
+
+# системное
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

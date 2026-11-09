@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Kineta</string>
+    <string name="title_activity_main">Kineta</string>
+    <string name="package_name">ru.kineta.trainer</string>
+    <string name="custom_url_scheme">ru.kineta.trainer</string>
+</resources>

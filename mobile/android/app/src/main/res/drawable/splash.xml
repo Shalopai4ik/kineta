@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Заставка запуска: кремовый фон и знак Kineta по центру -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background"/>
+    <item android:width="112dp" android:height="112dp" android:gravity="center">
+        <shape android:shape="rectangle"><solid android:color="#F27D45"/><corners android:radius="32dp"/></shape>
+    </item>
+    <item android:width="112dp" android:height="112dp" android:gravity="center" android:drawable="@drawable/ic_kineta_fg"/>
+</layer-list>

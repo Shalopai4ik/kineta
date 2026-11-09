@@ -1,0 +1,15 @@
+{
+  "appId": "ru.kineta.trainer",
+  "appName": "Kineta",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "App": {}
+  }
+}
