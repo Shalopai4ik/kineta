@@ -1,14 +1,18 @@
 {
   "name": "kineta",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "private": true,
   "description": "Kineta — мобильная игра-тренажёр управления бионическим протезом по двум каналам ЭМГ или потоку СПППР",
   "scripts": {
-    "test": "node --test tests/unit/*.test.mjs && node tests/e2e/smoke.mjs",
+    "test": "npm run test:unit && npm run test:e2e && npm run test:monkey",
     "test:unit": "node --test tests/unit/*.test.mjs",
     "test:e2e": "node tests/e2e/smoke.mjs",
-    "serve": "npx --yes serve prototype",
-    "apk": "npm --prefix mobile run apk"
+    "serve": "node tools/serve.mjs 3000",
+    "apk": "npm --prefix mobile run apk",
+    "serve:lan": "node tools/serve.mjs 3000 0.0.0.0",
+    "test:monkey": "node tests/e2e/monkey.mjs 700"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }

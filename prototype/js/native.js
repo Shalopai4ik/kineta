@@ -160,8 +160,9 @@ const Native = (() => {
     const FS = P('Filesystem'), SH = P('Share');
     if (FS && SH) {
       const r = await FS.writeFile({ path: name, data: text, directory: 'CACHE', encoding: 'utf8' });
-      await SH.share({ title, files: [r.uri], dialogTitle: title }).catch(e => { if (!/cancel/i.test(e?.message || '')) throw e; });
-      return 'shared';
+      let cancelled = false;
+      await SH.share({ title, files: [r.uri], dialogTitle: title }).catch(e => { if (!/cancel/i.test(e?.message || '')) throw e; cancelled = true; });
+      return cancelled ? 'cancel' : 'shared';
     }
     if (navigator.canShare && navigator.share && typeof File !== 'undefined') {
       const f = new File([text], name, { type: mime });

@@ -14,8 +14,9 @@
 ## Быстрый старт
 
 ```bash
-npm run serve          # веб-версия для отладки: http://localhost:3000 (F — К1, J — К2)
-npm test               # 35 юнит-тестов + 29 сценариев в headless Chrome
+npm run serve          # веб-версия для отладки: http://127.0.0.1:3000 (F — К1, J — К2), без зависимостей
+npm run serve:lan      # то же для телефона в той же сети Wi-Fi
+npm test               # 54 юнит-теста + 29 сценариев smoke и 30 стресс-сценариев в headless Chrome
 npm --prefix mobile install && npm run apk   # Android APK → mobile/dist/
 ```
 
@@ -27,7 +28,8 @@ npm --prefix mobile install && npm run apk   # Android APK → mobile/dist/
 |---|---|
 | `prototype/` | Игра (vanilla JS, без сборщика): `js/core.js` — сигнал и протез, `js/games.js` — игры, `js/ui.js` — экраны, `js/native.js` — мост к плагинам Capacitor |
 | `mobile/` | Оболочка Capacitor 7 (Android-проект, скрипт сборки APK) |
-| `tests/` | `unit/` — node:test на искусственных часах, `e2e/smoke.mjs` — headless Chrome через DevTools Protocol |
+| `tests/` | `unit/` — node:test на искусственных часах (сигнал, сохранения, стресс всех игр), `e2e/smoke.mjs` — сквозные сценарии, `e2e/monkey.mjs` — фаззинг входов и сотни случайных нажатий; обе через DevTools Protocol |
+| `tools/serve.mjs` | Статический сервер без зависимостей для `npm run serve` и e2e |
 | `docs/` | [Сборка и запуск](docs/BUILD.md) · [Интеграция](docs/INTEGRATION.md) · [Соответствие ТЗ](docs/TZ_COMPLIANCE.md) · [ИИ: фичи, план, верификация](docs/AI_REPORT.md) |
 | `assets/`, `interface/`, `prototype/design/` | Референсы дизайна |
 

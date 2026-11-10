@@ -19,7 +19,9 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 const uid = () => Math.random().toString(36).slice(2, 9);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const easeOut = t => 1 - Math.pow(1 - t, 3);
-const APP_VERSION = '3.3.0';
+/* квантиль выборки (0.5 — медиана, 0.9 — 90-й перцентиль); пустая выборка — 0 */
+const quantile = (a, q) => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * q))]; };
+const APP_VERSION = '3.3.1';
 
 /* ---------------- Шина событий ---------------- */
 const Bus = {
@@ -82,16 +84,79 @@ const DEF = {
   games: {}, history: [], ach: {}, demo: null,
   workshop: { parts: 0, built: 0, log: [] }, weekly: {}
 };
-function merge(a, b) { for (const k in b) { if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) merge(a[k], b[k]); else a[k] = b[k]; } return a; }
+/* слияние сохранения / настроек поверх значений по умолчанию.
+   Защита: ключи __proto__/constructor/prototype пропускаются (загрязнение прототипа через postMessage или localStorage),
+   объект по умолчанию не заменяется не-объектом, а число — не-числом (повреждённое сохранение не ломает интерфейс). */
+const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const NULLABLE = new Set(['battery']); // заряд null — протез его не сообщает
+const finite = (v, d) => typeof v === 'number' && Number.isFinite(v) ? v : d;
+const oneOf = (v, list, d) => list.includes(v) ? v : d;
+/* записи, которых нет в значениях по умолчанию (игры, история, дни), и допустимые значения настроек */
+function sanitize() {
+  const c = S.cfg;
+  c.mode = oneOf(c.mode, ['emg', 'spppr'], 'emg'); c.theme = oneOf(c.theme, ['light', 'dark', 'auto'], 'light');
+  c.coMode = oneOf(c.coMode, ['both', 'classic', 'sport'], 'both'); c.thrSrc = oneOf(c.thrSrc, ['game', 'device'], 'game');
+  c.hand = oneOf(c.hand, ['left', 'right'], 'left'); c.spGest = oneOf(c.spGest, [2, 6], 6);
+  if (!Object.hasOwn(HAND_PALS, c.handPal)) c.handPal = 'titan';
+  c.thr1 = clamp(c.thr1, .08, .95); c.thr2 = clamp(c.thr2, .08, .95); c.gain1 = clamp(Math.round(c.gain1), 1, 20); c.gain2 = clamp(Math.round(c.gain2), 1, 20);
+  c.hyst = clamp(c.hyst, .3, 1); c.deadzone = clamp(c.deadzone, 0, .5); c.smoothing = clamp(c.smoothing, 0, .95); c.slew = clamp(c.slew, .01, 1);
+  c.suppressMs = clamp(c.suppressMs, 0, 300); c.switchMs = clamp(c.switchMs, 50, 2000); c.sessionMin = clamp(c.sessionMin, 1, 120);
+  if (!Array.isArray(c.devThr) || c.devThr.length !== 2 || !c.devThr.every(Number.isFinite)) c.devThr = DEF.cfg.devThr.slice();
+  c.ble.format = oneOf(c.ble.format, ['u16le2', 'u8x2', 'f32le2', 'json'], 'u16le2'); // как BLE_FORMATS ниже (объявлен позже — load() идёт раньше)
+  c.ble.fullScale = Math.max(1, finite(c.ble.fullScale, 4095));
+  const k = S.calib; for (const i of [1, 2]) { k['base' + i] = clamp(k['base' + i], 0, .9); k['mvc' + i] = clamp(k['mvc' + i], k['base' + i] + .05, 1.5); }
+  S.profile.xp = Math.max(0, S.profile.xp); S.profile.streak = Math.max(0, Math.round(S.profile.streak));
+  for (const [id, g] of Object.entries(S.games)) {
+    if (!isObj(g)) { delete S.games[id]; continue; }
+    g.best = Math.max(0, finite(g.best, 0)); g.plays = Math.max(0, Math.round(finite(g.plays, 0))); g.stars = clamp(Math.round(finite(g.stars, 0)), 0, 3);
+    if (g.ls != null && !(Array.isArray(g.ls) && g.ls.length === 3)) delete g.ls; // gst() восстановит из stars
+    else if (g.ls) g.ls = g.ls.map(x => clamp(Math.round(finite(x, 0)), 0, 3));
+    if (g.diff != null) g.diff = clamp(Math.round(finite(g.diff, 1)), 1, 3);
+    if (g.adapt != null) g.adapt = clamp(finite(g.adapt, 3), 2, 4.5);
+    if (g.ghost != null) { if (!isObj(g.ghost)) delete g.ghost; else for (const [lk, gh] of Object.entries(g.ghost)) if (!isObj(gh) || !Number.isFinite(gh.T) || !Array.isArray(gh.d) || !Array.isArray(gh.x) || gh.d.length !== gh.x.length || gh.d.length < 2) delete g.ghost[lk]; }
+  }
+  S.history = S.history.filter(h => isObj(h) && Number.isFinite(h.t) && typeof h.game === 'string').slice(-300);
+  for (const [d, v] of Object.entries(S.stats.days)) if (!isObj(v) || !/^\d{4}-\d\d-\d\d$/.test(d)) delete S.stats.days[d]; else { for (const f of ['min', 'acts', 'acc', 'purity', 'react', 'n']) v[f] = finite(v[f], 0); if (!isObj(v.gest)) v.gest = {}; }
+  for (const [id, n] of Object.entries(S.stats.gestTotal)) if (!Number.isFinite(n)) delete S.stats.gestTotal[id];
+  if (S.missions != null && !(isObj(S.missions) && typeof S.missions.day === 'string' && Array.isArray(S.missions.list) && S.missions.list.every(isObj))) delete S.missions;
+  if (S.feedback != null && !Array.isArray(S.feedback)) delete S.feedback;
+  for (const [wk, w] of Object.entries(S.weekly)) if (!isObj(w) || !Array.isArray(w.tries)) delete S.weekly[wk];
+  const w = S.workshop; w.parts = clamp(Math.round(w.parts), 0, 7); w.built = Math.max(0, Math.round(w.built));
+  for (const [id, t] of Object.entries(S.ach)) if (!Number.isFinite(t)) delete S.ach[id];
+  if (typeof S.profile.name !== 'string' || !S.profile.name.trim()) S.profile.name = DEF.profile.name;
+  S.profile.name = S.profile.name.slice(0, 40);
+}
+function merge(a, b) {
+  if (!isObj(a) || !isObj(b)) return a;
+  for (const k of Object.keys(b)) {
+    if (BAD_KEYS.has(k)) continue;
+    const x = a[k], y = b[k];
+    if (isObj(x)) { if (isObj(y)) merge(x, y); continue; }
+    if (Array.isArray(x) && !Array.isArray(y)) continue;
+    if (typeof x === 'number' && !(typeof y === 'number' && Number.isFinite(y)) && !(y === null && NULLABLE.has(k))) continue;
+    if (typeof x === 'boolean' && typeof y !== 'boolean') continue;
+    if (typeof x === 'string' && typeof y !== 'string') continue;
+    a[k] = y;
+  }
+  return a;
+}
 let S;
+/* загрузка сохранения: любая ошибка в старом или испорченном сохранении — старт с настройками по умолчанию, а не белый экран */
 function load() {
+  try { loadSaved(); } catch (e) { console.warn('[Kineta] сохранение не загружено, старт с чистого листа', e); S = structuredClone(DEF); S.gestures = structuredClone(DEF_GESTURES).map(g => ({ ...g, builtin: true })); }
+}
+function loadSaved() {
   S = structuredClone(DEF);
   let raw = null;
   try { raw = localStorage.getItem(KEY); if (raw) merge(S, JSON.parse(raw)); }
   catch (e) { try { localStorage.setItem(KEY + '.broken', raw); } catch (_) { } console.warn('[Kineta] сохранение повреждено, копия в ' + KEY + '.broken'); }
-  if (!Array.isArray(S.gestures) || !S.gestures.length) S.gestures = structuredClone(DEF_GESTURES).map(g => ({ ...g, builtin: true }));
-  // ссылки из старых сохранений: только существующие жесты в ротации и активный жест
-  S.gestures = S.gestures.filter(g => g && g.id && Array.isArray(g.open) && Array.isArray(g.closed));
+  sanitize();
+  // жесты: id — строка, позы — 6 чисел; ссылки из старых сохранений — только на существующие жесты
+  const pose = a => Array.isArray(a) && a.length === 6 && a.every(Number.isFinite);
+  S.gestures = (Array.isArray(S.gestures) ? S.gestures : []).filter(g => isObj(g) && typeof g.id === 'string' && /^[\w-]{1,40}$/.test(g.id) && pose(g.open) && pose(g.closed));
+  S.gestures.forEach(g => { g.name = typeof g.name === 'string' && g.name.trim() ? g.name.slice(0, 40) : 'Жест'; });
+  if (!S.gestures.length) S.gestures = structuredClone(DEF_GESTURES).map(g => ({ ...g, builtin: true }));
   S.rotation = (Array.isArray(S.rotation) ? S.rotation : []).filter((id, i, a) => G(id) && a.indexOf(id) === i);
   if (!S.rotation.length) S.rotation = [S.gestures[0].id];
   if (!G(S.activeId)) S.activeId = S.rotation[0];
@@ -316,13 +381,15 @@ const SPN = { neutral: 'Нейтраль', flexion: 'Сгибание', extensio
 const zeroP = () => Object.fromEntries(SP_ALL.map(k => [k, 0]));
 const LOSS_SOFT = 200, LOSS_CRIT = 1500; // мс: > 200 — гасим скорость (инерция), > 1.5 с — критическая потеря, игра встаёт на паузу
 /* порог в шкале игры (после калибровки, чувствительности и dead-zone) ↔ амплитуда датчика 0…255 */
+/* шкала канала i по калибровке: уровень покоя и размах до максимума (не меньше 0.08 — защита от деления на ноль) */
+const calSpan = i => { const k = S.calib, base = k['base' + (i + 1)]; return { base, span: Math.max(.08, k['mvc' + (i + 1)] - base) }; };
 function thrToRaw(i) {
-  const c = C(), k = S.calib, dz = c.deadzone, base = k['base' + (i + 1)], span = Math.max(.08, k['mvc' + (i + 1)] - base);
+  const c = C(), dz = c.deadzone, { base, span } = calSpan(i);
   const n = c['thr' + (i + 1)] * (1 - dz) + dz;
   return Math.round(clamp(n / Ctrl.gainK(i + 1) * span + base) * 255);
 }
 function rawToThr(i, raw) {
-  const c = C(), k = S.calib, dz = c.deadzone, base = k['base' + (i + 1)], span = Math.max(.08, k['mvc' + (i + 1)] - base);
+  const c = C(), dz = c.deadzone, { base, span } = calSpan(i);
   const n = (raw / 255 - base) / span * Ctrl.gainK(i + 1);
   return +clamp((n - dz) / (1 - dz), .08, .95).toFixed(3);
 }
@@ -374,10 +441,10 @@ const Ctrl = {
     if (Array.isArray(smp.emg)) { a = +smp.emg[0] / 255; b = +smp.emg[1] / 255; } else { a = +smp.ch1; b = +smp.ch2; }
     if (!Number.isFinite(a) || !Number.isFinite(b)) { this.bad++; return; }
     if (Array.isArray(smp.thr) && smp.thr.length === 2 && smp.thr.every(x => Number.isFinite(+x))) this.setDevThr(smp.thr);
-    const c = C(), k = S.calib, t = performance.now();
+    const c = C(), t = performance.now();
     this.raw = [clamp(a), clamp(b)]; this.lastEmg = t; this.lossFlag = false; this.nS++; if (!this.rateT) this.rateT = t;
     if (t - this.rateT > 1000) { this.rate = Math.round(this.nS * 1000 / (t - this.rateT || 1000)); this.nS = 0; this.rateT = t; }
-    const n = [0, 1].map(i => clamp((this.raw[i] - k['base' + (i + 1)]) / Math.max(.08, k['mvc' + (i + 1)] - k['base' + (i + 1)]) * this.gainK(i + 1)));
+    const n = [0, 1].map(i => { const { base, span } = calSpan(i); return clamp((this.raw[i] - base) / span * this.gainK(i + 1)); });
     this.nRaw = n;
     const al = 1 - c.smoothing;
     this.s = this.s.map((s, i) => { const x = s + (n[i] - s) * al; return s + clamp(x - s, -c.slew, c.slew); });
@@ -394,6 +461,7 @@ const Ctrl = {
     this.lastTs = p.timestamp_ms; this.lastArr = performance.now(); this.pkts++; this.lastPkt = p;
     const d = p.dist, tp = zeroP(); let sum = 0;
     for (const k of SP_ALL) { const v = +d[k]; tp[k] = Number.isFinite(v) && v > 0 ? v : 0; sum += tp[k]; }
+    if (!Number.isFinite(sum)) { this.bad++; return; } // 1e308 + 1e308 — пакет испорчен
     if (sum > 0) for (const k of SP_ALL) tp[k] /= sum; else tp.neutral = 1;
     if (C().spGest !== 6) { for (const k of SP_KEYS) { tp.neutral += tp[k]; tp[k] = 0; } } // модель на 2 жеста: прочие классы — нейтраль
     this.tp = tp;
@@ -577,6 +645,7 @@ class BleProsthesisDriver {
   jsonEnd(s) { const nl = s.indexOf('\n'); if (nl >= 0) return nl + 1; let d = 0, st = s.indexOf('{'); if (st < 0) return 0; for (let k = st; k < s.length; k++) { if (s[k] === '{') d++; else if (s[k] === '}' && !--d) return k + 1; } return 0; }
   emitJson(txt, now) {
     let o; try { o = JSON.parse(txt); } catch (e) { Ctrl.bad++; return; }
+    if (!isObj(o)) { Ctrl.bad++; return; } // «null», число, строка, массив
     if (this.mode === 'spppr') { if (o.dist) this.cb(o); }
     else if (o && Array.isArray(o.emg)) this.cb({ timestamp_ms: o.timestamp_ms ?? now, emg: o.emg, thr: o.thr });
     else if (o && o.ch1 != null) this.cb({ timestamp_ms: o.timestamp_ms ?? now, ch1: clamp(+o.ch1), ch2: clamp(+o.ch2) });

@@ -24,7 +24,8 @@ const MISSIONS = [
 ];
 const Mission = {
   ensure() {
-    const d = dayKey(); if (S.missions?.day === d) return;
+    // миссии из старой версии, которых больше нет в пуле, — набор дня строится заново
+    const d = dayKey(); if (S.missions?.day === d && S.missions.list?.length === 3 && S.missions.list.every(m => MISSIONS.some(x => x.id === m.id))) return;
     let h = 0; for (const c of d) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     const pool = MISSIONS.map(m => m.id), list = [];
     while (list.length < 3) { h = (h * 1103515245 + 12345) >>> 0; const id = pool.splice(h % pool.length, 1)[0]; list.push({ id, p: 0, done: false }); }
@@ -48,6 +49,7 @@ const TONES = ['peach', 'sky', 'mint', 'lilac', 'sun', 'rose'];
 const badge = (icon, tone = 'peach', cls = '') => `<span class="bdg t-${tone} i-${tone} ${cls}">${ic(icon)}</span>`;
 const gIcon = (id, cls = '') => badge(GAMES[id].ic, GAMES[id].tone, cls);
 const battTxt = () => S.device.battery == null ? '—' : S.device.battery + '%';
+const pillHTML = (d = S.device) => `<i class="led ${d.connected ? '' : 'off'}"></i><span class="pill-name">${d.connected ? (d.real ? 'Протез' : 'Демо') : 'Нет связи'}</span>${d.connected ? '· ' + battTxt() : ''}`;
 const brand = () => `<span class="brand"><span class="bm">${ic('hand', '', 2.2)}</span>kineta</span>`;
 
 /* ---------------- XP, уровни, достижения ---------------- */
@@ -67,7 +69,7 @@ const ACH = [
   { id: 'maker', icon: 'edit', t: 'Конструктор', d: 'Создай свой жест', p: () => [Math.min(1, S.gestures.filter(g => !g.builtin).length), 1] },
   { id: 'rot5', icon: 'layers', t: 'Ротация', d: '5 жестов в ротации', p: () => [Math.min(5, S.rotation.length), 5] },
   { id: 'clean', icon: 'spark', t: 'Чистый сигнал', d: 'Чистота ≥ 90% в пройденном уровне', p: () => [S.history.some(h => !h.seed && h.purity >= 90 && h.acc >= 60 && h.stars >= 1) ? 1 : 0, 1] },
-  { id: 'all', icon: 'game', t: 'Игроман', d: 'Сыграй во все 5 игр', p: () => [playedGames().length, 5] },
+  { id: 'all', icon: 'game', t: 'Игроман', get d() { return `Сыграй во все ${ARCADE().length} игр`; }, p: () => [playedGames().length, ARCADE().length] },
   { id: 'streak7', icon: 'flame', t: 'Неделя силы', d: 'Серия 7 дней', p: () => [Math.min(7, S.profile.streak), 7] },
   { id: 'g1000', icon: 'hand', t: 'Тысяча хватов', d: '1000 активаций жестов', p: () => [Math.min(1000, S.stats.gestLive || 0), 1000] },
   { id: 'fast', icon: 'bolt', t: 'Молния', d: 'Реакция быстрее 350 мс', p: () => [S.history.some(h => h.react && h.react < 350) ? 1 : 0, 1] },
@@ -328,7 +330,9 @@ const TABS = ['home', 'gestures', 'sensors', 'games', 'progress'];
 const App = {
   cur: null, stack: [],
   go(name, p = {}, opt = {}) {
-    const sc = SCR[name]; if (!sc) return;
+    // только собственные экраны: имя из deep link / postMessage не должно попадать на Object.prototype ('constructor', '__proto__')
+    const sc = Object.hasOwn(SCR, name) ? SCR[name] : null; if (!sc) return;
+    if (sc.valid && !sc.valid(p)) { if (name !== 'home') this.go('home', {}, { fade: true }); return; }
     // двойной тап по кнопке не открывает один и тот же экран дважды
     const sig = name + JSON.stringify(p), t = performance.now(); if (sig === this._sig && t - this._t < 400 && !opt.force) return; this._sig = sig; this._t = t;
     document.body.dataset.scr = name; // для стилей по экрану (плашка демо-данных — только на дашбордах)
@@ -504,7 +508,7 @@ SCR.home = {
     const wd = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
     return `<div class="stg">
     <div class="topbar">${brand()}<span class="grow"></span>
-      <button class="pill-st" data-go="device" title="Мой протез"><i class="led ${dev.connected ? '' : 'off'}"></i><span class="pill-name">${dev.connected ? (dev.real ? 'Протез' : 'Демо') : 'Нет связи'}</span>${dev.connected ? '· ' + battTxt() : ''}</button>
+      <button class="pill-st" data-go="device" title="Мой протез">${pillHTML()}</button>
       <button class="ava" data-go="profile" title="Профиль">${esc(S.profile.name[0] || 'K')}</button></div>
     <div class="greet"><h1>${greet()}, ${esc(S.profile.name)}</h1><p class="sub">${d.min >= goal ? 'Цель дня выполнена. Отличная работа!' : `До цели дня ${left} мин — пара игр, и рука слушается лучше.`}</p>
       <button class="rankline" data-go="profile"><span class="tag soft">${ic('star')} Ранг ${L}</span><div class="pbar"><i data-w="${clamp((S.profile.xp - lo) / (hi - lo)) * 100}%" style="width:0"></i></div><small>${fmtN(hi - S.profile.xp)} XP до ${L + 1}</small></button></div>
@@ -651,7 +655,7 @@ function gestureSheet(id) {
     <div class="row" style="margin-top:10px"><button class="btn ghost sm" data-x="rot">${S.rotation.includes(id) ? 'Убрать из ротации' : 'В ротацию'}</button><button class="btn ghost sm" data-x="edit">${ic('edit')} ${g.builtin ? 'Копия' : 'Изменить'}</button>${!g.builtin ? `<button class="btn ghost sm" data-x="del" style="color:var(--err);width:60px;flex:none">${ic('trash')}</button>` : ''}</div>`, (sh, close) => {
     const hv = new HandView($('#gsHand', sh)); hv.svg.style.cssText = 'height:100%;width:auto';
     const t0 = performance.now(); let run = true;
-    const loop = now => { if (!run) return; const k = (Math.sin((now - t0) / 650 - 1.57) + 1) / 2; hv.set(g.open.map((v, i) => lerp(v, g.closed[i], k))); requestAnimationFrame(loop); };
+    const loop = now => { if (!run || !sh.isConnected) return; const k = (Math.sin((now - t0) / 650 - 1.57) + 1) / 2; hv.set(g.open.map((v, i) => lerp(v, g.closed[i], k))); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
     sh.addEventListener('click', e => {
       const x = e.target.closest('[data-x]')?.dataset.x; if (!x) return;
@@ -677,7 +681,7 @@ SCR.editor = {
   render(p) {
     const src = p.id ? G(p.id) : p.copy ? G(p.copy) : null;
     this.g = src ? structuredClone(src) : { id: null, name: 'Жест №' + (S.gestures.filter(g => !g.builtin).length + 1), open: [5, 5, 5, 5, 5, 30], closed: [50, 60, 60, 60, 60, 60] };
-    if (p.copy) { this.g.id = null; this.g.name = src.name + ' (мой)'; this.g.builtin = false; }
+    if (p.copy && src) { this.g.id = null; this.g.name = src.name + ' (мой)'; this.g.builtin = false; }
     this.side = 'closed'; this.sel = 1; this.preview = false;
     this.g0 = JSON.stringify([this.g.name, this.g.open, this.g.closed]); this.saved = false;
     return `<div class="back"><button class="ib" id="eBack" title="Назад">${ic('back')}</button><input class="grow" id="eName" maxlength="28" value="${esc(this.g.name)}" style="border:0;background:none;font-weight:800;font-size:19px;outline:none;min-width:0"><button class="ib" id="eRename">${ic('edit')}</button></div>
@@ -746,7 +750,7 @@ SCR.editor = {
         this.g.name = $('#sN', sh).value.trim() || this.g.name;
         const isNew = !this.g.id;
         if (isNew) { this.g.id = 'u' + uid(); this.g.builtin = false; S.gestures.push(this.g); }
-        else { const i = S.gestures.findIndex(x => x.id === this.g.id); S.gestures[i] = this.g; }
+        else { const i = S.gestures.findIndex(x => x.id === this.g.id); if (i >= 0) S.gestures[i] = this.g; else S.gestures.push(this.g); } // жест могли удалить, пока шёл редактор
         if ($('[data-sw]', sh).classList.contains('on') && !S.rotation.includes(this.g.id)) S.rotation.push(this.g.id);
         this.saved = true; save(); if (isNew) Mission.ev('gesture:new'); checkAch(); close();
         Prosthesis.setActive(this.g.id, true);
@@ -842,7 +846,8 @@ SCR.sensors = {
       const up = () => { t._d = false; t.classList.remove('drag'); }; t.addEventListener('pointerup', up); t.addEventListener('pointercancel', up);
     });
     this.place(el); this.ro = new ResizeObserver(() => this.place(el)); this.ro.observe($('#scope', el));
-    const setGain = (k, v) => { c[k] = clamp(Math.round(v), 1, 20); c.preset = 'custom'; Ctrl.applyDevThr(); this.place(el); save(); const inp = $(`[data-sens="${k}"]`, el); inp.value = c[k]; rangeFill(inp); $('#v_' + k, el).textContent = c[k]; inp.closest('.card').querySelector('.tag').textContent = 'x' + (c[k] / 10).toFixed(1); $$('#sPre button', el).forEach(b => b.classList.remove('on')); };
+    const syncGain = k => { const inp = $(`[data-sens="${k}"]`, el); inp.value = c[k]; rangeFill(inp); $('#v_' + k, el).textContent = c[k]; inp.closest('.card').querySelector('.tag').textContent = 'x' + (c[k] / 10).toFixed(1); };
+    const setGain = (k, v) => { c[k] = clamp(Math.round(v), 1, 20); c.preset = 'custom'; Ctrl.applyDevThr(); this.place(el); save(); syncGain(k); $$('#sPre button', el).forEach(b => b.classList.remove('on')); };
     $$('[data-sens]', el).forEach(inp => { rangeFill(inp); inp.addEventListener('input', () => setGain(inp.dataset.sens, +inp.value)); });
     $$('[data-st]', el).forEach(b => b.addEventListener('click', () => { setGain(b.dataset.st, c[b.dataset.st] + +b.dataset.d); Snd.tick(); }));
     const cmd = async k => { const sent = await Prosthesis.command(k); toast('hand', k === 'open' ? 'Команда: открыть' : 'Команда: закрыть', sent ? 'Отправлено на протез' : 'Показано на модели протеза'); };
@@ -850,7 +855,7 @@ SCR.sensors = {
     $('#sPre', el).onclick = e => {
       const b = e.target.closest('[data-p]'); if (!b) return; Object.assign(c, PRESETS[b.dataset.p].v); c.preset = b.dataset.p; save();
       $$('#sPre button', el).forEach(x => x.classList.toggle('on', x === b)); this.place(el);
-      ['gain1', 'gain2'].forEach(k => { const inp = $(`[data-sens="${k}"]`, el); inp.value = c[k]; rangeFill(inp); $('#v_' + k, el).textContent = c[k]; inp.closest('.card').querySelector('.tag').textContent = 'x' + (c[k] / 10).toFixed(1); });
+      Ctrl.applyDevThr(); ['gain1', 'gain2'].forEach(syncGain);
       toast(PRESETS[b.dataset.p].e, 'Профиль «' + PRESETS[b.dataset.p].n + '»', 'Пороги и чувствительность обновлены');
     };
     $('#advT', el).onclick = e => { const a = $('#adv', el); a.classList.toggle('hidden'); e.target.textContent = a.classList.contains('hidden') ? 'Показать' : 'Скрыть'; if (!a.classList.contains('hidden')) a.style.animation = 'fadeUp .4s both'; };
@@ -916,7 +921,7 @@ SCR.calib = {
     this.running = true; this.abort = false; const id = this.runId = (this.runId || 0) + 1, dead = () => this.abort || id !== this.runId; this.resetUi(el);
     $('#cBtns', el).innerHTML = `<button class="btn ghost" id="cStop">${ic('x')} Остановить</button>`;
     $('#cStop', el).onclick = () => { this.abort = true; };
-    const med = a => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; }, p90 = a => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length * .9)]; };
+    const med = a => quantile(a, .5), p90 = a => quantile(a, .9);
     const res = {};
     for (let i = 0; i < 3; i++) {
       const [t, k, d] = this.steps[i], row = $(`[data-s="${i}"]`, el);
@@ -942,7 +947,7 @@ SCR.calib = {
       row.classList.remove('now'); row.classList.add('done'); $('.cn', row).innerHTML = ic('check'); Snd.ok();
       await sleep(300); if (dead()) return id === this.runId && this.stop(el);
     }
-    Object.assign(S.calib, res, { done: true, at: Date.now() }); save();
+    Object.assign(S.calib, res, { done: true, at: Date.now() }); Ctrl.applyDevThr(); save(); // пороги протеза (0…255) — в новую шкалу
     this.running = false; Snd.win(); confetti(60);
     $('#cT', el).textContent = 'Калибровка завершена'; $('#cD', el).textContent = `Покой ${res.base1.toFixed(2)} / ${res.base2.toFixed(2)} · максимум ${res.mvc1.toFixed(2)} / ${res.mvc2.toFixed(2)}`;
     $('#cN', el).innerHTML = '✓'; $('#cS', el).textContent = 'готово'; this.setRing(el, 1);
@@ -969,6 +974,7 @@ const adaptOf = id => clamp(gst(id).adapt ?? 3, 2, 4.5);
 const totalStars = () => ARCADE().reduce((a, id) => a + gst(id).ls.reduce((x, y) => x + y, 0), 0);
 const lvlBars = id => { const s = gst(id), u = unlockedLv(id); return `<div class="lvls">${[0, 1, 2].map(i => `<i class="${s.ls[i] >= 1 ? 'on' : i === u - 1 ? 'cur' : ''}"></i>`).join('')}</div>`; };
 /* рекорд: из сохранённой статистики игры и из истории (включая демо-историю первого запуска) */
+const lvName = lv => lv >= 4 ? 'бесконечный' : 'ур. ' + lv;
 const plur = (n, a, b, c) => { const m = n % 10, h = n % 100; return n + ' ' + (m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c); };
 const playsOf = id => Math.max(S.games[id]?.plays || 0, S.history.filter(h => h.game === id).length);
 const bestScore = id => Math.max(S.games[id]?.best || 0, ...S.history.filter(h => h.game === id && h.win !== false).map(h => h.score || 0));
@@ -1019,8 +1025,18 @@ function openGame(id, daily) {
 }
 
 /* ---------- Игровой экран ---------- */
+/* уровень игры: обычный — целый 1…3, бесконечный — дробный 2…4.5, обучение — 1.
+   Иначе deep link (?diff=999) записал бы звёзды в st.ls[998] и испортил сохранение. */
+function normDiff(p) {
+  const g = GAMES[p.id], v = +p.diff;
+  if (g.tut) p.diff = 1;
+  else if (p.endless) p.diff = +clamp(Number.isFinite(v) ? v : 3, 2, 4.5).toFixed(2);
+  else p.diff = clamp(Math.round(Number.isFinite(v) ? v : 1), 1, 3);
+  return p;
+}
 SCR.play = {
   full: true, noEmu: true,
+  valid: p => !!p && typeof p.id === 'string' && Object.hasOwn(GAMES, p.id) && !!normDiff(p),
   render(p) {
     const g = GAMES[p.id], lv = p.diff || 1, lvT = p.endless ? 'Бесконечный · ' + lv.toFixed(1) : 'Уровень ' + lv;
     return `<div class="ghud"><button class="ib" id="gP">${ic('pause')}</button><div class="gt"><b>${g.t}</b><small>${g.tut ? 'Режим обучения' : lvT}</small></div><div class="gs"><b id="gScore">0</b><small id="gTime"></small></div></div>
@@ -1068,7 +1084,7 @@ SCR.play = {
   quickEnd(el, c) {
     this.qc = null; $('#gQc', el)?.remove(); S.lastQC = Date.now();
     if (c) {
-      const med = a => { const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length / 2)] ?? 0; }, p90 = a => { const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length * .9)] ?? 0; };
+      const med = a => quantile(a, .5), p90 = a => quantile(a, .9);
       const k = S.calib, out = [];
       for (const i of [0, 1]) {
         const base = med(c[0][i]), peak = p90(c[i + 1][i]), n = i + 1;
@@ -1168,6 +1184,7 @@ function bindPad(p) {
 /* ---------- Результат ---------- */
 SCR.result = {
   full: false, noEmu: true,
+  valid: p => !!p?.r && Object.hasOwn(GAMES, p.id),
   render(p) {
     const r = p.r, g = GAMES[p.id], tut = g.tut, lv = p.diff || 1;
     const title = r.win === false ? 'Почти получилось' : tut ? 'Обучение пройдено' : r.stars >= 3 ? 'Превосходно!' : r.stars === 2 ? 'Отлично!' : r.stars === 1 ? 'Уровень пройден' : 'Попробуй ещё раз';
@@ -1232,7 +1249,7 @@ SCR.progress = {
     const gest = Object.entries(this.range === 'all' ? S.stats.gestTotal : cur.reduce((m, x) => { if (x) for (const k in x.gest) m[k] = (m[k] || 0) + x.gest[k]; return m; }, {})).filter(([id]) => G(id)).sort((a, b) => b[1] - a[1]);
     const top = gest.slice(0, 6).map(([id, v], i) => ({ label: G(id).name, value: v, color: SERIES[i], id })), rest = gest.slice(6).reduce((a, b) => a + b[1], 0);
     if (rest) top.push({ label: 'Другие', value: rest, color: OTHER });
-    const recent = S.history.slice(-6).reverse();
+    const recent = S.history.filter(h => Object.hasOwn(GAMES, h.game)).slice(-6).reverse(); // игры из старых версий пропускаем
     const empty = !S.history.length && !Object.values(S.stats.days).some(d => d.min || d.acts);
     $('#pBody', el).innerHTML = `<div class="stg">
       ${empty ? `<div class="card insights" style="margin-top:14px"><h3>Здесь появится ваш прогресс</h3><button data-play="school" class="ins">${badge('play', 'mint')}<span>Начните со «Школы управления» — 2–3 минуты, и графики оживут</span>${ic('chev', 'chev')}</button></div>` : ''}
@@ -1263,7 +1280,7 @@ SCR.progress = {
       <h2>Рекорды в играх</h2>
       <div class="records">${Object.entries(GAMES).filter(([, g]) => !g.tut).map(([id, g]) => `<div class="rec">${gIcon(id)}<b>${bestScore(id) ? fmtN(bestScore(id)) : '—'}</b><small>${g.t} · ${plur(playsOf(id), 'игра', 'игры', 'игр')}</small><div style="color:#FFB524;font-size:12px;letter-spacing:1px">${'★'.repeat(S.games[id]?.stars || 0)}<span style="color:var(--line)">${'★'.repeat(3 - (S.games[id]?.stars || 0))}</span></div></div>`).join('')}</div>
       <h2>Последние тренировки</h2>
-      <div class="card">${recent.length ? recent.map(h => { const g = GAMES[h.game]; return `<div class="hist">${gIcon(h.game)}<div><b>${g.t}</b><small>${new Date(h.t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · ${fmtTime(h.dur)}${h.lv ? ' · ур. ' + h.lv : ''}${h.win === false ? ' · не пройден' : h.stars ? ' · ' + '★'.repeat(h.stars) : ''}</small></div><div class="hv">${fmtN(h.score)}<small class="muted">${h.acc}%${h.purity != null ? ' · чист. ' + h.purity + '%' : ''}</small></div></div>`; }).join('') : '<p class="sub">Пока нет тренировок</p>'}</div>
+      <div class="card">${recent.length ? recent.map(h => { const g = GAMES[h.game]; return `<div class="hist">${gIcon(h.game)}<div><b>${g.t}</b><small>${new Date(h.t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · ${fmtTime(h.dur)}${h.lv ? ' · ' + lvName(h.lv) : ''}${h.win === false ? ' · не пройден' : h.stars ? ' · ' + '★'.repeat(h.stars) : ''}</small></div><div class="hv">${fmtN(h.score)}<small class="muted">${h.acc}%${h.purity != null ? ' · чист. ' + h.purity + '%' : ''}</small></div></div>`; }).join('') : '<p class="sub">Пока нет тренировок</p>'}</div>
       <div class="row" style="margin-top:14px;gap:10px;flex-wrap:wrap"><button class="btn ghost" data-go="achievements" style="flex:1">${ic('trophy')} Все достижения</button><button class="btn ghost" id="pReport" style="flex:1">${ic('down')} Отчёт для специалиста</button></div></div>`;
     const P = $('#pBody', el);
     $('#pReport', P).onclick = () => Native.saveFile(`kineta-report-${dayKey()}.html`, specialistReport(N), 'text/html', 'Отчёт Kineta').then(r => r !== 'cancel' && toast('down', r === 'shared' ? 'Отчёт готов к отправке' : 'Отчёт сохранён', 'Откройте файл и при необходимости распечатайте в PDF')).catch(() => toast('down', 'Не удалось сохранить отчёт'));
@@ -1351,10 +1368,10 @@ function specialistReport(N = 30) {
     ['Спад силы к концу игры (утомление)', pc(avg(H, h => h.fat)), trend(h => h.fat, '%', true)],
     ['Средняя реакция («Реакция»)', (r => r == null ? '—' : Math.round(r) + ' мс')(avg(H.filter(h => h.game === 'react'), h => h.react)), trend(h => h.game === 'react' ? h.react : null, ' мс', true)]
   ];
-  const games = Object.keys(GAMES).filter(id => !GAMES[id].tut).map(id => { const g = H.filter(h => h.game === id); return g.length ? `<tr><td>${esc(GAMES[id].t)}</td><td>${esc(GAMES[id].skill)}</td><td>${g.length}</td><td>${Math.max(...g.map(h => h.lv || 1))}</td><td>${pc(avg(g, h => h.acc))}</td><td>${pc(avg(g, h => h.purity))}</td></tr>` : ''; }).join('');
+  const games = Object.keys(GAMES).filter(id => !GAMES[id].tut).map(id => { const g = H.filter(h => h.game === id); return g.length ? `<tr><td>${esc(GAMES[id].t)}</td><td>${esc(GAMES[id].skill)}</td><td>${g.length}</td><td>${(m => m >= 4 ? '∞' : m)(Math.max(...g.map(h => h.lv || 1)))}</td><td>${pc(avg(g, h => h.acc))}</td><td>${pc(avg(g, h => h.purity))}</td></tr>` : ''; }).join('');
   const pd = days.filter(([, d]) => d.purity);
   const spark = pd.length > 1 ? (() => { const W = 560, Hh = 120, pts = pd.map(([, d], i) => [Math.round(i / (pd.length - 1) * W), Math.round(Hh - d.purity / 100 * Hh)]); return `<svg viewBox="-6 -6 ${W + 12} ${Hh + 12}" width="100%" height="140" role="img" aria-label="Чистота сигнала по дням"><path d="M0 ${Hh}H${W}M0 ${Hh / 2}H${W}" stroke="#e5e5e5"/><text x="${W}" y="${Hh / 2 - 4}" font-size="11" fill="#999" text-anchor="end">50%</text><polyline fill="none" stroke="#3E9FD6" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" points="${pts.map(p => p.join(',')).join(' ')}"/></svg>`; })() : '<p class="m">Недостаточно дней для графика.</p>';
-  const fb = (S.feedback || []).filter(x => x.t >= from).slice(-5).map(x => `<li>${new Date(x.t).toLocaleDateString('ru-RU')}: ${x.rate ? '★'.repeat(x.rate) + ' ' : ''}${esc(x.text || '')}</li>`).join('');
+  const fb = (S.feedback || []).filter(x => x.t >= from).slice(-5).map(x => `<li>${new Date(x.t).toLocaleDateString('ru-RU')}: ${x.rate ? '★'.repeat(x.rate) + ' ' : ''}${x.feel ? `«${esc(x.feel)}» после игры «${esc(GAMES[x.game]?.t || x.game || '')}»${x.lv ? ', ' + lvName(x.lv) : ''}` : ''}${esc(x.text || '')}</li>`).join('');
   const c = C();
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Отчёт Kineta — ${dayKey()}</title>
 <style>body{font:15px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;color:#2b2420;background:#fff;max-width:760px;margin:24px auto;padding:0 16px}h1{font-size:22px;margin:0}h2{font-size:17px;margin:26px 0 8px}.m{color:#857669}table{width:100%;border-collapse:collapse}td,th{padding:7px 8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}th{font-size:13px;color:#857669;font-weight:600}.demo{background:#ffe2b8;padding:8px 12px;border-radius:8px}@media print{body{margin:0}}</style></head><body>
@@ -1506,8 +1523,8 @@ SCR.profile = {
     let rate = 0; $('#fbR', el).onclick = e => { const b = e.target.closest('button'); if (!b) return; rate = +b.dataset.v; $$('#fbR button', el).forEach(x => x.classList.toggle('on', x === b)); };
     $('#fbS', el).onclick = () => { if (!rate && !$('#fbT', el).value.trim()) { toast('info', 'Поставьте оценку или напишите пару слов'); return; } (S.feedback ||= []).push({ t: Date.now(), rate, text: $('#fbT', el).value.trim() }); save(); Bus.emit('feedback', { rate }); $('#fbT', el).value = ''; toast('heart', 'Спасибо!', 'Отзыв сохранён и попадёт в экспорт'); confetti(40); };
     $('#pExp', el).onclick = () => {
-      const txt = JSON.stringify({ exported: new Date().toISOString(), profile: S.profile, device: S.device, cfg: S.cfg, calib: S.calib, gestures: S.gestures, rotation: S.rotation, stats: S.stats, games: S.games, history: S.history, feedback: S.feedback || [] }, null, 2); Native.saveFile('kineta-export.json', txt, 'application/json', 'Экспорт Kineta').then(r => r !== 'cancel' && toast('down', r === 'shared' ? 'Файл экспорта готов' : 'Файл экспорта сохранён')).catch(() => toast('down', 'Не удалось сохранить файл')); };
-    $('#pReset', el).onclick = () => modal(`<b style="font-size:17px">Сбросить статистику?</b><p class="sub">История игр, дни и счётчик жестов будут удалены. Жесты и настройки останутся.</p><div class="row"><button class="btn ghost sm" data-x="no">Отмена</button><button class="btn danger sm" data-x="yes">Сбросить</button></div>`, (m, close) => m.onclick = e => { const x = e.target.closest('[data-x]')?.dataset.x; if (!x) return; close(); if (x === 'yes') { S.stats = { days: {}, gestTotal: {}, seeded: false }; S.demo = false; document.body.classList.remove('demo'); S.history = []; S.games = {}; S.ach = {}; S.profile.xp = 0; S.profile.streak = 0; S.profile.lastDay = null; S.dailyDone = null; S.missions = null; Mission.ensure(); touchStreak(); save(true); toast('refresh', 'Статистика сброшена'); App.refresh(); } });
+      const txt = JSON.stringify({ exported: new Date().toISOString(), profile: S.profile, device: S.device, cfg: S.cfg, calib: S.calib, gestures: S.gestures, rotation: S.rotation, stats: S.stats, games: S.games, history: S.history, ach: S.ach, weekly: S.weekly, workshop: S.workshop, feedback: S.feedback || [], version: APP_VERSION }, null, 2); Native.saveFile('kineta-export.json', txt, 'application/json', 'Экспорт Kineta').then(r => r !== 'cancel' && toast('down', r === 'shared' ? 'Файл экспорта готов' : 'Файл экспорта сохранён')).catch(() => toast('down', 'Не удалось сохранить файл')); };
+    $('#pReset', el).onclick = () => modal(`<b style="font-size:17px">Сбросить статистику?</b><p class="sub">История игр, дни, счётчик жестов, опыт, испытания недели и мастерская будут удалены. Жесты и настройки останутся.</p><div class="row"><button class="btn ghost sm" data-x="no">Отмена</button><button class="btn danger sm" data-x="yes">Сбросить</button></div>`, (m, close) => m.onclick = e => { const x = e.target.closest('[data-x]')?.dataset.x; if (!x) return; close(); if (x === 'yes') { S.stats = { days: {}, gestTotal: {}, seeded: false }; S.demo = false; document.body.classList.remove('demo'); S.history = []; S.games = {}; S.ach = {}; S.profile.xp = 0; S.profile.streak = 0; S.profile.lastDay = null; S.dailyDone = null; S.missions = null; S.weekly = {}; S.workshop = { parts: 0, built: 0, log: [] }; Mission.ensure(); touchStreak(); save(true); toast('refresh', 'Статистика сброшена'); App.refresh(); } });
     $('#pOnb', el).onclick = () => App.go('onboard');
     $('#pHelp', el).onclick = () => supportSheet();
   }
@@ -1524,7 +1541,7 @@ function supportSheet() {
    Глобальные элементы: статус-бар, тема, зеркало, мобильный эмулятор
    ===================================================================== */
 /* Состояние протеза меняется само (обрыв, заряд) — обновляем то, что на экране */
-Bus.on('device', () => { const c = App.cur; if (!c) return; if (c.name === 'device') App.refresh(); else if (c.name === 'home') { const b = $('.pill-st', c.el), d = S.device; if (b) b.innerHTML = `<i class="led ${d.connected ? '' : 'off'}"></i><span class="pill-name">${d.connected ? (d.real ? 'Протез' : 'Демо') : 'Нет связи'}</span>${d.connected ? '· ' + battTxt() : ''}`; } });
+Bus.on('device', () => { const c = App.cur; if (!c) return; if (c.name === 'device') App.refresh(); else if (c.name === 'home') { const b = $('.pill-st', c.el), d = S.device; if (b) b.innerHTML = pillHTML(); } });
 Bus.on('battery', () => Bus.emit('device'));
 const mqDark = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : null;
 const themeNow = () => C().theme === 'auto' ? (mqDark?.matches ? 'dark' : 'light') : C().theme === 'dark' ? 'dark' : 'light';

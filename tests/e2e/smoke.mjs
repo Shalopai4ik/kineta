@@ -3,61 +3,11 @@
 // профиль, отчёт для специалиста, демо-режим, тёмная тема, планшет. Критерий: 0 исключений и 0 ошибок консоли.
 //   node tests/e2e/smoke.mjs            — скриншоты в tests/e2e/out/
 //   CHROME=путь node tests/e2e/smoke.mjs
-import http from 'node:http';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { launch, sleep, out, BOT, STOP } from './cdp.mjs';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(here, '../../prototype');
-const out = path.join(here, 'out');
-fs.mkdirSync(out, { recursive: true });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-/* ---------- статический сервер ---------- */
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.woff2': 'font/woff2', '.json': 'application/json' };
-const server = http.createServer((req, res) => {
-  const u = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-  const f = path.join(root, u === '/' ? 'index.html' : u);
-  if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(res);
-});
-await new Promise(r => server.listen(0, '127.0.0.1', r));
-const base = `http://127.0.0.1:${server.address().port}/`;
-
-/* ---------- Chrome ---------- */
-const candidates = [process.env.CHROME, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/google-chrome', '/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].filter(Boolean);
-const exe = candidates.find(p => fs.existsSync(p));
-if (!exe) { console.error('Chrome не найден, задайте CHROME=путь'); process.exit(2); }
-const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'kineta-e2e-'));
-const chrome = spawn(exe, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check', '--autoplay-policy=no-user-gesture-required', '--mute-audio', 'about:blank'], { stdio: 'ignore' });
-let port = null;
-for (let i = 0; i < 100 && !port; i++) { await sleep(100); try { port = fs.readFileSync(path.join(prof, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch (e) { } }
-if (!port) { console.error('Chrome не открыл порт отладки'); chrome.kill(); process.exit(2); }
-const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-let id = 0; const pending = new Map(), errors = [];
-ws.onmessage = ev => {
-  const m = JSON.parse(ev.data);
-  if (m.id && pending.has(m.id)) { const { r, j } = pending.get(m.id); pending.delete(m.id); m.error ? j(new Error(m.error.message)) : r(m.result); return; }
-  if (m.method === 'Runtime.exceptionThrown') errors.push('exception: ' + (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text));
-  if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errors.push('console.error: ' + m.params.args.map(a => a.value ?? a.description).join(' '));
-  if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error' && !/favicon/.test(m.params.entry.url || '')) errors.push('log: ' + m.params.entry.text + ' ' + (m.params.entry.url || ''));
-};
-const cdp = (method, params = {}) => new Promise((r, j) => { const i = ++id; pending.set(i, { r, j }); ws.send(JSON.stringify({ id: i, method, params })); });
-const js = async (expr) => { const r = await cdp('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(expr.slice(0, 80) + ' → ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text)); return r.result.value; };
-const shot = async name => { const r = await cdp('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(out, name + '.png'), Buffer.from(r.data, 'base64')); };
-const size = (w, h, mobile = true) => cdp('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile });
-const go = async (q, wait = 2600) => { await cdp('Page.navigate', { url: base + q }); await sleep(wait); };
-
-const results = [];
-const step = async (name, fn) => { const e0 = errors.length; try { await fn(); results.push([errors.length === e0 ? 'PASS' : 'FAIL', name]); } catch (e) { errors.push(name + ': ' + e.message); results.push(['FAIL', name]); } };
-
-await cdp('Runtime.enable'); await cdp('Log.enable'); await cdp('Page.enable');
-await size(390, 844);
+const { js, shot, size, go, step, report } = await launch();
 
 await step('Онбординг на чистой установке, без демо-данных', async () => {
   await go('?reset=1');
@@ -80,8 +30,6 @@ await step('Прогресс без истории показывает пуст
   if (!(await js('document.body.innerText.includes("Здесь появится ваш прогресс")'))) throw new Error('нет пустого состояния');
 });
 
-const BOT = `(() => { clearInterval(window.__bot); let k = 0; window.__bot = setInterval(() => { k++; const p = k % 24; Intent.auto = p < 6 ? [.75, 0] : p < 12 ? [0, 0] : p < 18 ? [0, .75] : [0, 0]; }, 120); })()`;
-const STOP = `clearInterval(window.__bot); Intent.auto = null;`;
 await js('C().quickCal = false; save(true)');
 const games = await js('Object.keys(GAMES)');
 for (const mode of ['emg', 'spppr']) {
@@ -177,8 +125,4 @@ await step('Цвета руки, формы каналов, крупный ре�
   await js('C().big = false; applyBig(); C().theme = "light"; applyTheme()'); await size(390, 844);
 });
 
-ws.close(); chrome.kill(); server.close();
-try { fs.rmSync(prof, { recursive: true, force: true }); } catch (e) { }
-for (const [s, n] of results) console.log(`${s}  ${n}`);
-console.log(`\n${results.filter(r => r[0] === 'PASS').length}/${results.length} сценариев, ошибок: ${errors.length}. Скриншоты: ${out}`);
-if (errors.length) { console.log(errors.slice(0, 30).join('\n')); process.exit(1); }
+report();

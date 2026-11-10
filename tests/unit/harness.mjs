@@ -32,7 +32,7 @@ export function loadCore({ search = '', storage = {}, capacitor = null, games = 
   const ctx = vm.createContext(win);
   vm.runInContext(src('native.js'), ctx, { filename: 'native.js' });
   vm.runInContext(src('core.js'), ctx, { filename: 'core.js' });
-  if (games) { vm.runInContext('var Mission = { ev(e) { (globalThis.__mission ||= []).push(e); } };', ctx); vm.runInContext(src('games.js'), ctx, { filename: 'games.js' }); }
+  if (games) { vm.runInContext('var Mission = { ev(e) { (globalThis.__mission ||= []).push(e); } };', ctx); vm.runInContext(src('hand.js'), ctx, { filename: 'hand.js' }); vm.runInContext(src('games.js'), ctx, { filename: 'games.js' }); }
   const run = code => vm.runInContext(code, ctx);
   return {
     ctx, run, store,

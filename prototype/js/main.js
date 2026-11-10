@@ -136,10 +136,19 @@ const Host = {
     if (ext) Ctrl.external = true;
     if ((mode === 'emg' || mode === 'spppr') && mode !== c.mode) c.mode = mode;
     if (ext || mode) Ctrl.restart();
-    if (q.get('return')) { this.ret = q.get('return'); this.name = q.get('host') || 'приложение'; this.session = q.get('session'); document.body.classList.add('hosted'); }
+    if (q.get('return') && !this.safeReturn(q.get('return'))) console.warn('[Host] return отклонён: разрешены http(s) и схемы приложений');
+    else if (q.get('return')) { this.ret = q.get('return'); this.name = q.get('host') || 'приложение'; this.session = q.get('session'); document.body.classList.add('hosted'); }
     Ctrl.applyDevThr(); save();
     const scr = q.get('screen'); if (scr && S.onboarded && window.App) setTimeout(() => KinetaTrainer.open(scr, { diff: +q.get('diff') || 1 }), 50);
     return true;
+  },
+  /* адрес возврата из deep link: http(s) или собственная схема приложения производителя (vendorapp://…).
+     javascript:, data:, vbscript:, file:, blob: запрещены — иначе ссылка ?return=javascript:… выполнила бы чужой код. */
+  safeReturn(url) {
+    let u; try { u = new URL(String(url)); } catch (e) { return false; }
+    const p = u.protocol.toLowerCase();
+    if (p === 'http:' || p === 'https:') return true;
+    return /^[a-z][a-z0-9+.-]*:$/.test(p) && !['javascript:', 'data:', 'vbscript:', 'file:', 'blob:', 'about:', 'filesystem:'].includes(p);
   },
   /* что игра возвращает хосту: пороги и чувствительность (их можно поменять в игре) + итоги сеанса */
   result() {
@@ -154,6 +163,7 @@ const Host = {
   back() {
     const r = this.result(); Bus.emit('host:return', r); save(true);
     if (!this.ret) return r;
+    if (!this.safeReturn(this.ret)) { console.warn('[Host] return отклонён'); return r; }
     try { const u = new URL(this.ret); for (const k in r) u.searchParams.set(k, r[k]); location.href = u.toString(); } catch (e) { console.warn('[Host] неверный return', e); }
     return r;
   }
@@ -176,7 +186,7 @@ window.KinetaTrainer = {
   getProgress: () => structuredClone({ profile: S.profile, games: S.games, history: S.history, stats: S.stats, feedback: S.feedback || [] }),
   getGestures: () => structuredClone({ gestures: S.gestures, rotation: S.rotation, active: S.activeId }),
   setGesture: id => Prosthesis.setActive(id),
-  open: (screen, params) => GAMES[screen] ? App.go('play', { id: screen, diff: params?.diff || 1 }) : App.go(screen, params || {}),
+  open: (screen, params) => { if (typeof screen !== 'string') return; const p = isObj(params) ? params : {}; return Object.hasOwn(GAMES, screen) ? App.go('play', { id: screen, diff: p.diff || 1, endless: !!p.endless }) : App.go(screen, p); },
   /* Bluetooth-протез: профиль GATT производителя, подключение (вызывать по жесту пользователя), команды */
   bluetooth: {
     setProfile(p) { Object.assign(C().ble, p || {}); save(); },
