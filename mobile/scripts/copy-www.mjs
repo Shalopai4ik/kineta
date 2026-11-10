@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = path.resolve(here, '../../prototype'), dst = path.resolve(here, '../www');
 fs.rmSync(dst, { recursive: true, force: true });
-const items = ['index.html', 'css', 'js', 'fonts', 'img/own'];
+const items = ['index.html', 'css', 'js', 'fonts', 'img/own', 'audio'].filter(it => fs.existsSync(path.join(src, it))); // audio — записанный голос (tools/voiceover.mjs)
 let n = 0, bytes = 0;
 const copy = (a, b) => {
   const st = fs.statSync(a);

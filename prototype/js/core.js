@@ -21,7 +21,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const easeOut = t => 1 - Math.pow(1 - t, 3);
 /* квантиль выборки (0.5 — медиана, 0.9 — 90-й перцентиль); пустая выборка — 0 */
 const quantile = (a, q) => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * q))]; };
-const APP_VERSION = '3.5.0';
+const APP_VERSION = '3.5.1';
 
 /* ---------------- Шина событий ---------------- */
 const Bus = {
@@ -70,7 +70,7 @@ const DEF = {
     // thrSrc — откуда пороги: 'game' — свои игровые (калибровка), 'device' — пороги, пришедшие от протеза в потоке (0…255)
     // spGest — словарь СПППР: 2 жеста + нейтраль или 6 жестов + нейтраль; hand — сторона протеза (здоровая рука — противоположная)
     coMode: 'both', thrSrc: 'game', devThr: [97, 89], spGest: 6, hand: 'left', sessionMin: 10, remote: '',
-    sound: true, vibro: true, voice: false, mirror: false, theme: 'light',
+    sound: true, vibro: true, voice: false, voiceSrc: 'rec', mirror: false, theme: 'light', // voiceSrc: 'rec' — записанный голос, 'sys' — синтезатор телефона
     // theme: 'light' | 'dark' | 'auto' (как в системе); handPal — цвет руки протеза; big — крупный режим;
     // shapes — формы каналов (К1 круг, К2 квадрат) для различения без цвета; quickCal — проверка датчиков перед игрой
     handPal: 'titan', big: false, shapes: true, quickCal: true, club: '', // club — адрес общей таблицы клуба (tools/relay.mjs в локальной сети)
@@ -98,7 +98,7 @@ function sanitize() {
   const c = S.cfg;
   c.mode = oneOf(c.mode, ['emg', 'spppr'], 'emg'); c.theme = oneOf(c.theme, ['light', 'dark', 'auto'], 'light');
   c.coMode = oneOf(c.coMode, ['both', 'classic', 'sport', 'lock'], 'both'); c.thrSrc = oneOf(c.thrSrc, ['game', 'device'], 'game');
-  c.hand = oneOf(c.hand, ['left', 'right'], 'left'); c.spGest = oneOf(c.spGest, [2, 6], 6);
+  c.hand = oneOf(c.hand, ['left', 'right'], 'left'); c.spGest = oneOf(c.spGest, [2, 6], 6); c.voiceSrc = oneOf(c.voiceSrc, ['rec', 'sys'], 'rec');
   if (!Object.hasOwn(HAND_PALS, c.handPal)) c.handPal = 'titan';
   c.thr1 = clamp(c.thr1, .08, .95); c.thr2 = clamp(c.thr2, .08, .95); c.gain1 = clamp(Math.round(c.gain1), 1, 20); c.gain2 = clamp(Math.round(c.gain2), 1, 20);
   c.hyst = clamp(c.hyst, .3, 1); c.deadzone = clamp(c.deadzone, 0, .5); c.smoothing = clamp(c.smoothing, 0, .95); c.slew = clamp(c.slew, .01, 1);

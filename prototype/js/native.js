@@ -138,22 +138,43 @@ const Native = (() => {
     try { navigator.vibrate?.(p); } catch (e) { }
   }
 
-  /* ---------- Голосовые подсказки ---------- */
+  /* ---------- Голосовые подсказки ----------
+     1) Записанный голос: фразы игры заранее озвучены нейросетевым голосом Piper (tools/voiceover.mjs →
+        audio/voice/*.mp3 + index.json) — звучит одинаково приятно на любом телефоне и без интернета.
+     2) Если записи нет (новая фраза) или выбран «Системный» — синтезатор телефона, лучший русский голос:
+        нейросетевой (Natural / Neural / Online / Enhanced) → Google → остальные. */
   const TTS = P('TextToSpeech');
+  const voiceKey = s => String(s).toLowerCase().replace(/ё/g, 'е').replace(/[«»"'!?.,…:;()—–-]/g, ' ').replace(/\s+/g, ' ').trim(); // как в tools/voiceover.mjs
+  let clips = null, clipsP = null, player = null;
+  const loadClips = () => clipsP ||= (typeof fetch === 'function' ? fetch('audio/voice/index.json').then(r => r.ok ? r.json() : null) : Promise.resolve(null))
+    .then(j => { clips = j && typeof j.files === 'object' ? j.files : {}; }).catch(() => { clips = {}; });
+  if (typeof window !== 'undefined' && window.document) loadClips();
+  const voicePref = () => { try { return C().voiceSrc || 'rec'; } catch (e) { return 'rec'; } };
+  function playClip(text) {
+    if (!clips) return false; const f = clips[voiceKey(text)]; if (!f || typeof Audio === 'undefined') return false;
+    try { player?.pause(); player = new Audio('audio/voice/' + f); player.play().catch(() => { }); return true; } catch (e) { return false; }
+  }
+  const vrank = v => (/natural|neural|online|premium|enhanced|wavenet/i.test(v.name || '') ? 40 : 0) + (/google/i.test(v.name || '') ? 20 : 0) + (/milena|svetlana|dariya|katya|alena|yuri|irina/i.test(v.name || '') ? 5 : 0) + (v.localService ? 1 : 0);
+  const bestOf = list => list.filter(v => /^ru/i.test(v.lang || '')).sort((a, b) => vrank(b) - vrank(a))[0] || null;
+  let ttsVoice; // индекс лучшего голоса плагина (undefined — ещё не искали, -1 — нет русского)
+  async function pluginVoice() { if (ttsVoice !== undefined) return ttsVoice; try { const l = (await TTS.getSupportedVoices())?.voices || [], b = bestOf(l); ttsVoice = b ? l.indexOf(b) : -1; } catch (e) { ttsVoice = -1; } return ttsVoice; }
   let lastSay = '', lastSayT = 0;
-  function say(text, { rate = 1.05, force = false } = {}) {
+  function say(text, { rate = 1, force = false, src } = {}) {
     if (!text) return;
     const now = Date.now(); if (!force && text === lastSay && now - lastSayT < 1500) return; // одна и та же фраза не повторяется очередью
     lastSay = text; lastSayT = now;
-    if (TTS) { TTS.speak({ text, lang: 'ru-RU', rate, volume: 1, queueStrategy: 0 }).catch(() => { }); return; }
+    if ((src || voicePref()) === 'rec' && playClip(text)) return;
+    if (TTS) { pluginVoice().then(vi => TTS.speak({ text, lang: 'ru-RU', rate, pitch: 1.03, volume: 1, queueStrategy: 0, ...(vi >= 0 ? { voice: vi } : {}) })).catch(() => { }); return; }
     const ss = window.speechSynthesis; if (!ss || typeof SpeechSynthesisUtterance === 'undefined') return;
     try {
-      ss.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = 'ru-RU'; u.rate = rate;
-      const v = ss.getVoices?.().find(x => /^ru/i.test(x.lang)); if (v) u.voice = v;
+      ss.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = 'ru-RU'; u.rate = rate; u.pitch = 1.03;
+      const v = bestOf(ss.getVoices?.() || []); if (v) u.voice = v;
       ss.speak(u);
     } catch (e) { }
   }
-  function hush() { if (TTS) TTS.stop().catch(() => { }); else try { window.speechSynthesis?.cancel(); } catch (e) { } }
+  function hush() { try { player?.pause(); } catch (e) { } if (TTS) TTS.stop().catch(() => { }); else try { window.speechSynthesis?.cancel(); } catch (e) { } }
+  /* что сейчас доступно — для профиля: есть ли записи и какой системный голос будет выбран */
+  function voiceInfo() { const sys = !TTS && window.speechSynthesis ? bestOf(window.speechSynthesis.getVoices?.() || []) : null; return { rec: !!(clips && Object.keys(clips).length), recN: clips ? Object.keys(clips).length : 0, sys: TTS ? 'синтезатор телефона' : sys ? sys.name : 'нет русского голоса' }; }
 
   /* ---------- Сохранить / поделиться файлом ---------- */
   async function saveFile(name, text, mime = 'application/json', title = name) {
@@ -177,5 +198,5 @@ const Native = (() => {
   const SB = P('StatusBar');
   function statusBar(dark, color) { if (!SB) return; SB.setStyle({ style: dark ? 'DARK' : 'LIGHT' }).catch(() => { }); SB.setBackgroundColor?.({ color }).catch(() => { }); }
 
-  return { isNative, statusBar, vibrate, say, hush, saveFile, fullUuid, hexToDv, toHex, hasTTS: () => !!TTS || 'speechSynthesis' in window };
+  return { isNative, statusBar, vibrate, say, hush, saveFile, fullUuid, hexToDv, toHex, voiceKey, voiceInfo, loadClips, hasTTS: () => !!TTS || 'speechSynthesis' in window };
 })();

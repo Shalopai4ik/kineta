@@ -1067,6 +1067,8 @@ SCR.play = {
         <div class="pad c2 m2" data-ch="1"><div class="fill"></div><div class="thl"></div><span>Открыть · К2</span><kbd>J</kbd></div></div>`;
   },
   mount(el, p) {
+    // Q&A 12: в игровом режиме движение протеза отключают — настоящему протезу уходит команда (если протокол её принимает)
+    BT.send({ cmd: 'game', active: true, game: p.id });
     Rewards.list = []; this.p = p; if (p.duel) Duel.useCal(p.duel); this.game = new GAMES[p.id].cls(p.diff || 1); this.paused = true; this.ended = false; this.lastScore = 0; this.intro = true; this.sq = 0; this.lastChips = ''; this.lastHint = null; this.qc = null; this.tl = []; this.tlT = 0;
     this.cv = $('#gc', el); this.ctx = this.cv.getContext('2d'); this.fit();
     $$('.pad', el).forEach(bindPad);
@@ -1113,7 +1115,7 @@ SCR.play = {
     }
     this.countdown(el);
   },
-  unmount() { this.off?.(); this.offDev?.(); this.offSig?.(); this.offBack?.(); this.ro?.disconnect(); this.ended = true; Ctrl.m = null; if (this.p?.duel) Duel.endCal(this.p.duel); },
+  unmount() { this.off?.(); this.offDev?.(); this.offSig?.(); this.offBack?.(); this.ro?.disconnect(); this.ended = true; Ctrl.m = null; if (this.p?.duel) Duel.endCal(this.p.duel); BT.send({ cmd: 'game', active: false }); },
   fit() { const dpr = devicePixelRatio || 1, W = this.cv.offsetWidth, H = this.cv.offsetHeight; if (!W) return; this.cv.width = W * dpr; this.cv.height = H * dpr; this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.game.resize(W, H); },
   async countdown(el) {
     const cd = $('#gCd', el); this.paused = true; this.cdAbort = false; this.countingDown = true;
@@ -1519,6 +1521,7 @@ SCR.profile = {
         ${row('sound', 'Звуки', 'Ненавязчивые сигналы', sw('sound', c.sound))}
         ${row('vibro', 'Вибрация', 'Тактильный отклик', sw('vibro', c.vibro))}
         ${row('voice', 'Голосовые подсказки', 'Игра говорит, что делать, — можно смотреть на руку, а не на экран', sw('voice', c.voice))}
+        <div class="set" style="display:block"><div class="between"><span>Голос<small id="vInfo">${(i => c.voiceSrc === 'rec' && i.rec ? `Записанный, ${i.recN} фраз; новые фразы — голосом телефона` : 'Системный: ' + esc(i.sys))(Native.voiceInfo())}</small></span><button class="lnk" id="vTest">${ic('sound')} Прослушать</button></div>${seg('vsrc', [['rec', 'Записанный'], ['sys', 'Системный']], c.voiceSrc)}</div>
         <div class="set" style="display:block"><div class="between"><span>Цель на день</span><span class="tag soft" id="goalV">${S.profile.goalMin} мин</span></div><input type="range" min="5" max="40" step="5" value="${S.profile.goalMin}" id="goal"></div></div>
       <h2>Отзыв о приложении</h2><div class="card"><div class="presets" id="fbR">${[['Тяжело', 1], ['Нормально', 3], ['Отлично', 5]].map(([e, v]) => `<button data-v="${v}">${e}</button>`).join('')}</div><textarea class="txt" id="fbT" placeholder="Что улучшить? (необязательно)" style="margin-top:10px;min-height:70px"></textarea><button class="btn sm" id="fbS" style="margin-top:10px">Отправить отзыв</button></div>
       <h2>Данные</h2><div class="card" style="padding:4px 16px">
@@ -1537,6 +1540,10 @@ SCR.profile = {
       b.classList.toggle('on'); save(); vib(8);
     }));
     bindSeg(el, 'theme', v => { C().theme = v; applyTheme(); save(); vib(8); });
+    const vInfo = () => { const i = Native.voiceInfo(), x = $('#vInfo', el); if (x) x.textContent = C().voiceSrc === 'rec' && i.rec ? `Записанный, ${i.recN} фраз; новые фразы — голосом телефона` : 'Системный: ' + i.sys; };
+    bindSeg(el, 'vsrc', v => { C().voiceSrc = v; save(); vInfo(); Native.say('Сожми ка один до зелёной зоны', { force: true }); });
+    $('#vTest', el).onclick = () => { Snd.init(); Native.say('Сожми ка один до зелёной зоны', { force: true }); };
+    Native.loadClips().then(vInfo);
     $('#hPal', el).onclick = e => { const b = e.target.closest('[data-pal]'); if (!b) return; C().handPal = b.dataset.pal; applyHand(); save(); $$('#hPal button', el).forEach(x => x.classList.toggle('on', x === b)); Snd.tick(); toast('palette', 'Цвет руки: ' + HAND_PALS[b.dataset.pal].n.toLowerCase()); };
     bindSeg(el, 'hand', v => { const c = C(); c.hand = v; c.mirror = v === 'right'; applyMirror(); save(); const m = $('[data-sw="mirror"]', el); m?.classList.toggle('on', c.mirror); toast('mirror', 'Протез на ' + (v === 'left' ? 'левой' : 'правой') + ' руке', 'Интерфейс — под ' + (c.mirror ? 'левую' : 'правую') + ' здоровую руку'); });
     const se = $('#ses', el); rangeFill(se); se.oninput = () => { C().sessionMin = +se.value; rangeFill(se); $('#sesV', el).textContent = se.value + ' мин'; save(); };

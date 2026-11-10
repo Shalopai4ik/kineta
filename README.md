@@ -18,7 +18,7 @@
 ```bash
 npm run serve          # веб-версия для отладки: http://127.0.0.1:3000 (F — К1, J — К2), без зависимостей
 npm run serve:lan      # то же для телефона в той же сети Wi-Fi
-npm test               # 60 юнит-тестов + 33 сценария smoke и 30 стресс-сценариев в headless Chrome
+npm test               # 63 юнит-теста + 33 сценария smoke и 30 стресс-сценариев в headless Chrome
 npm --prefix mobile install && npm run apk   # Android APK → mobile/dist/
 ```
 

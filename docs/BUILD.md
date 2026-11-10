@@ -27,13 +27,25 @@ package.json          npm test · test:unit · test:e2e · test:monkey · serve 
 ## Тесты
 
 ```bash
-npm run test:unit   # ~30 с: 60 тестов, без браузера (стресс игр — основная часть времени)
+npm run test:unit   # ~30 с: 63 теста, без браузера (стресс игр — основная часть времени)
 npm run test:e2e    # ~6 мин: Chrome/Edge headless, 33 сценария, 0 ошибок консоли
 npm run test:monkey # ~3 мин: 30 сценариев — повреждённые сохранения, мусорные deep link, postMessage и пакеты, 700 случайных нажатий
 npm test            # все три набора
 node tests/e2e/monkey.mjs 2000 42   # больше действий и своё зерно (воспроизводимо)
 node tests/e2e/screencast.mjs       # демо-ролик с подписями → docs/media/kineta-demo.mp4 (нужен ffmpeg, FFMPEG=путь)
 ```
+
+## Голос: озвучка нейросетевым голосом Piper
+
+Подсказки в игре и комментарии к ролику озвучиваются офлайн-синтезатором [Piper](https://github.com/rhasspy/piper) (лицензия MIT) — живой голос вместо системного «робота». Нужны `piper.exe` и голос `ru_RU-<голос>-medium.onnx` с [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices) в одной папке (по умолчанию `C:/kineta-build/tts`, другая — `PIPER_DIR`).
+
+```bash
+node tools/voiceover.mjs game irina   # фразы игры → prototype/audio/voice/*.mp3 + index.json (попадают в APK)
+node tools/voiceover.mjs cast irina   # комментарии ролика → tests/e2e/out/voice/*.wav
+node tests/e2e/screencast.mjs         # ролик: подписи держатся, пока звучит фраза, звук сводится по отметкам времени
+```
+
+Голоса: `irina` (женский, по умолчанию), `denis`, `dmitri`, `ruslan` (мужские). Тексты комментариев — `tests/e2e/narration.mjs` (`text` — подпись, `say` — для речи, без сокращений). Фразы игры собираются из кода (`tools/voice-phrases.mjs`), поэтому после правки подсказок достаточно перезапустить `voiceover.mjs game`. В профиле: «Голос» — «Записанный» (Piper) или «Системный» (лучший русский голос телефона: нейросетевой → Google → остальные). Фраза без записи всегда звучит системным голосом.
 
 Юнит-тесты загружают `js/native.js`, `js/core.js` и `js/games.js` в изолированный `vm`-контекст с искусственными часами: время сдвигается шагами по 10 мс, поэтому задержка, потеря пакетов и джиттер измеряются точно и воспроизводимо. Для e2e нужен установленный Chrome или Edge (путь можно задать переменной `CHROME`).
 
@@ -48,7 +60,7 @@ node tests/e2e/screencast.mjs       # демо-ролик с подписями 
 cd mobile
 npm install
 npm run apk                      # = powershell -File scripts/build-apk.ps1
-# → mobile/dist/kineta-3.5.0-debug.apk
+# → mobile/dist/kineta-3.5.1-debug.apk
 ```
 
 Что делает скрипт:
@@ -60,7 +72,7 @@ npm run apk                      # = powershell -File scripts/build-apk.ps1
 Параметры скрипта: `-Sdk`, `-Jdk`, `-Work`, `-Type release`. Release-сборку нужно подписать своим ключом.
 
 Установка на телефон:
-- `adb install -r mobile/dist/kineta-3.5.0-debug.apk`;
+- `adb install -r mobile/dist/kineta-3.5.1-debug.apk`;
 - или скопировать APK на телефон и открыть его, разрешив установку из неизвестных источников.
 
 Минимальная версия — Android 8.0 (API 26). Размер APK — несколько мегабайт при ориентире 100–150 МБ.
