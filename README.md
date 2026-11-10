@@ -34,6 +34,7 @@ npm --prefix mobile install && npm run apk   # Android APK → mobile/dist/
 | `tests/` | `unit/` — node:test на искусственных часах (сигнал, сохранения, стресс всех игр), `e2e/smoke.mjs` — сквозные сценарии, `e2e/monkey.mjs` — фаззинг входов и сотни случайных нажатий; обе через DevTools Protocol |
 | `tools/serve.mjs` | Статический сервер без зависимостей для `npm run serve` и e2e |
 | `docs/` | [Сборка и запуск](docs/BUILD.md) · [Интеграция](docs/INTEGRATION.md) · [Соответствие ТЗ](docs/TZ_COMPLIANCE.md) · [ИИ: фичи, план, верификация](docs/AI_REPORT.md) |
+| Для сдачи | [Презентация (PDF, 10 слайдов)](docs/Kineta-presentation.pdf) · [Техническая документация (DOCX)](docs/Kineta-technical-documentation.docx) · [Отчёт об использовании ИИ (DOCX)](docs/Kineta-AI-report.docx) · [Демо-ролик](docs/media/kineta-demo.mp4) — пересборка: `npm --prefix tools/docs install && node tools/docs/presentation.mjs && node tools/docs/docs.mjs` |
 | `assets/`, `interface/`, `prototype/design/` | Референсы дизайна |
 
 Подробное описание экранов, игр и архитектуры — в [prototype/README.md](prototype/README.md).

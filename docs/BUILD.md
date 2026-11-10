@@ -35,6 +35,16 @@ node tests/e2e/monkey.mjs 2000 42   # больше действий и своё 
 node tests/e2e/screencast.mjs       # демо-ролик с подписями → docs/media/kineta-demo.mp4 (нужен ffmpeg, FFMPEG=путь)
 ```
 
+## Документы для сдачи
+
+```bash
+npm run test:e2e                 # свежие кадры игры (tests/e2e/out)
+npm --prefix tools/docs install  # docx, mammoth
+node tools/docs/presentation.mjs # → docs/Kineta-presentation.pdf (HTML-слайды → PDF в headless Chrome)
+node tools/docs/docs.mjs         # → docs/Kineta-technical-documentation.docx, docs/Kineta-AI-report.docx
+node tools/docs/preview.mjs docs/Kineta-AI-report.docx   # предпросмотр без Word: объём, таблицы, картинки
+```
+
 ## iOS
 
 Проект Xcode — `mobile/ios` (Capacitor 7, CocoaPods). На Mac:

@@ -1,0 +1,13 @@
+{
+  "name": "kineta-docs",
+  "private": true,
+  "type": "module",
+  "description": "Сборка презентации (PDF) и документов (DOCX) для сдачи",
+  "scripts": {
+    "build": "node presentation.mjs && node docs.mjs"
+  },
+  "dependencies": {
+    "docx": "^9.15.3",
+    "mammoth": "^1.13.0"
+  }
+}

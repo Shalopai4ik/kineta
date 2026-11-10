@@ -29,3 +29,5 @@ Thumbs.db
 prototype/tools/board.json
 !docs/media/*.mp4
 prototype/tools/reports/
+tools/docs/out/
+tools/docs/node_modules/
