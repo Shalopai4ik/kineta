@@ -132,6 +132,24 @@ class Banner {
     ctx.save(); ctx.globalAlpha = clamp(b.life / .25); ctx.translate(x, y); ctx.scale(sc, sc); txtO(ctx, b.s, 0, 0, b.size, b.c, b.stroke, 8); ctx.restore();
   }
 }
+/* Идея 1 — баланс каналов (Q&A 5): по последним играм (bal — доля работы К1) находим слабый канал;
+   пока перекос больше 60/40, задания для него выпадают чаще (~65 %). Bias.cur ставит экран игры перед созданием сцены. */
+const Bias = {
+  cur: null,
+  get() {
+    const h = (typeof S !== 'undefined' && Array.isArray(S.history) ? S.history : []).filter(x => x && x.bal != null && !x.seed).slice(-6);
+    if (h.length < 2) return null; const b = h.reduce((a, x) => a + x.bal, 0) / h.length / 100;
+    return b > .6 ? { weak: 1, b } : b < .4 ? { weak: 0, b } : null;
+  },
+  /* канал для следующего задания: 0 — К1, 1 — К2 */
+  ch() { const w = this.cur; return w ? (Math.random() < .65 ? w.weak : 1 - w.weak) : Math.random() < .5 ? 0 : 1; },
+  /* выбор из списка состояний: слабый канал — с удвоенным весом */
+  pick(opts) { const w = this.cur, want = w ? (w.weak ? 'CH2' : 'CH1') : null; return pick(want && opts.includes(want) ? [...opts, want] : opts); },
+  note() { const w = this.cur; return w ? `Больше заданий для К${w.weak + 1}: в последних играх К${w.weak ? 1 : 2} работал ${Math.round((w.weak ? w.b : 1 - w.b) * 100)} % времени` : ''; }
+};
+/* Идея 2 — 6 жестов СПППР в играх (Q&A 22): новый устойчивый жест (Ctrl.g, единичные ошибки уже прощены) */
+const SIX = () => C().mode === 'spppr' && C().spGest === 6;
+function gesture(game, c) { const g = c && c.g; if (g === game._g) return null; game._g = g; return SIX() && g && g !== 'neutral' ? g : null; }
 const starsFor = (acc, purity) => { const k = acc * .7 + purity * .3; return k >= .85 ? 3 : k >= .68 ? 2 : k >= .45 ? 1 : 0; };
 /* параметр уровня: 1–3 — как задано; дробный уровень (бесконечный режим) — интерполяция, выше 3 — продолжение
    тренда последнего шага с ограничением, целые величины (счётчики) округляются */
@@ -151,7 +169,7 @@ class RaceGame {
     this.SEG = 200; this.ROAD = 1150; this.camH = 1000; this.camD = .84; this.draw_ = 130;
     this.goal = LV(lv, [2200, 3200, 4200]); this.total = 0;
     this.pos = 0; this.speed = 0; this.max = 7800 + lv * 1300; this.px = 0; this.nitro = 1; this.boost = false; this.finished = false;
-    this.offT = 0; this.crash = 0; this.shake = 0; this.crystals = 0; this.hits = 0; this.sky = 0; this.cleanDist = 0; this.clean1k = false; this.dist = 0; this.actT = 0;
+    this.offT = 0; this.crash = 0; this.shake = 0; this.crystals = 0; this.hits = 0; this.sky = 0; this.cleanDist = 0; this.clean1k = false; this.dist = 0; this.actT = 0; this.hornCd = 0; this.horns = 0;
     // призрак: лучший финиш этого уровня — дистанция и положение на дороге каждые 0.25 с
     this.gKey = Number.isInteger(lv) && lv <= 3 ? String(lv) : 'endless';
     this.guest = typeof SCR !== 'undefined' && !!SCR.play?.p?.duel; // ход гостя в дуэли — призрака владельца не перезаписываем
@@ -180,7 +198,7 @@ class RaceGame {
   progress() { return clamp(this.dist / this.goal); }
   hud() { return fmtTime(this.dur - this.T); }
   ghostAt(T) { const g = this.ghost; if (!g) return null; const f = T / .25, i = Math.floor(f); if (i >= g.d.length - 1) return { d: g.d.at(-1), x: g.x.at(-1), fin: true }; const k = f - i; return { d: g.d[i] + (g.d[i + 1] - g.d[i]) * k, x: g.x[i] + (g.x[i + 1] - g.x[i]) * k }; }
-  chips() { const gh = this.ghostAt(this.T), gap = gh ? Math.round(this.dist - gh.d) : null; return [['Скорость', Math.round(this.speed / 40) + ' км/ч'], ...(gap != null ? [['Призрак', (gap >= 0 ? '+' : '−') + Math.abs(gap) + ' м', gap >= 0 ? '#3DB37A' : '#9B78E8']] : []), ...(Ctrl.bothOK() ? [['Нитро', Math.round(this.nitro * 100) + '%', '#9B78E8']] : []), ['Кристаллы', this.crystals]]; }
+  chips() { const gh = this.ghostAt(this.T), gap = gh ? Math.round(this.dist - gh.d) : null; return [['Скорость', Math.round(this.speed / 40) + ' км/ч'], ...(gap != null ? [['Призрак', (gap >= 0 ? '+' : '−') + Math.abs(gap) + ' м', gap >= 0 ? '#3DB37A' : '#9B78E8']] : []), ...(Ctrl.bothOK() ? [['Нитро', Math.round(this.nitro * 100) + '%', '#9B78E8']] : []), ...(SIX() ? [['Гудок · супинация', this.hornCd > 0 ? Math.ceil(this.hornCd) + ' с' : 'готов', this.hornCd > 0 ? null : '#9B78E8']] : []), ['Кристаллы', this.crystals]]; }
   hint() { if (this.finished) return ['Финиш!', 'ok']; if (Math.abs(this.px) > 1) return ['Обочина — верни машину на трассу', 'warn']; if (this.boost) return ['Нитро!', 'ok']; return this.T < 6 ? 'К1 — влево · К2 — вправо · обе — нитро' : ''; }
   update(dt, c) {
     this.T += dt; this.fx.update(dt); this.ban.update(dt);
@@ -193,6 +211,13 @@ class RaceGame {
     this.speed += (target - this.speed) * dt * (this.speed < target ? .6 : 2.5);
     const steer = c.state === 'BOTH' ? 0 : (c.a[1] - c.a[0]); // К1 (закрытие) — влево, К2 (открытие) — вправо
     if (c.state !== 'REST') this.actT += dt; // время активного управления: машина едет сама, без руления уровень не засчитывается
+    if (this.hornCd > 0) this.hornCd -= dt;
+    if (gesture(this, c) === 'supination' && this.hornCd <= 0) { // СПППР 6 жестов: гудок — ближайшая машина впереди в твоей полосе уступает дорогу
+      this.hornCd = 5; this.horns++; Snd.tone(392, .18, 'square', .04); Snd.tone(330, .22, 'square', .04, .16);
+      const s0 = Math.floor((this.pos + 840) / this.SEG); let moved = false;
+      for (let k = 1; k < 45 && !moved; k++) for (const o of this.segs[(s0 + k) % this.segs.length].obj) if (o.t === 'car' && !o.hit && Math.abs(o.off - this.px) < .4) { o.off = [-.62, 0, .62].sort((a, b) => Math.abs(b - this.px) - Math.abs(a - this.px))[0]; moved = true; break; }
+      this.ban.show(moved ? 'Би-бип! Дорогу!' : 'Би-бип!', '#fff', '#9B78E8', .8, 26);
+    }
     this.px += steer * dt * 2.6 * Math.max(.35, pct);
     this.px -= dt * 2 * pct * pct * seg.curve * .16; // центробежная сила
     this.px = clamp(this.px, -1.8, 1.8);
@@ -323,7 +348,8 @@ class FlapGame {
     this.goalN = LV(lv, [12, 16, 20]); this.vy = 0; this.lives = 3; this.inv = 0; this.gates = []; this.passed = 0; this.seen = 0; this.gems = 0; this.bg = 0; this.next = 1.2; this.started = false; this.flaps = 0; this.charge = 0; this.peak = 0; this.leakT = 0; this.endT = 0;
     // цвет ворот = канал: оранжевые — К1, голубые — К2. Серии одного цвета короче с уровнем: 3 → 2 → 1 (частое переключение)
     this.mode = 0; this.fl = [0, 0]; this.wrong = 0; this.run = LV(lv, [3, 2, 1]); this.seq = [];
-    for (let i = 0, ch = Math.random() < .5 ? 0 : 1; this.seq.length < this.goalN + 2; i++) { const n = lv === 3 ? 1 + (Math.random() < .35) : this.run; for (let k = 0; k < n; k++) this.seq.push(ch); ch = 1 - ch; }
+    for (let i = 0, ch = Bias.ch(); this.seq.length < this.goalN + 2; i++) { const n = (lv === 3 ? 1 + (Math.random() < .35) : this.run) + (Bias.cur && ch === Bias.cur.weak ? 1 : 0); for (let k = 0; k < n; k++) this.seq.push(ch); ch = 1 - ch; } // серии слабого канала на 1 длиннее
+    this.shieldT = 0; this.shieldCd = 0; this.shields = 0; // СПППР 6 жестов: супинация — щит
   }
   resize(W, H) { if (!this.W) this.y = H * .45; this.W = W; this.H = H; this.k = H / 600; }
   onState(e) { if (this.done || this.endT) return; if (e.state === 'CH1') this.flap(0); else if (e.state === 'CH2') this.flap(1); }
@@ -335,7 +361,7 @@ class FlapGame {
   nextGate() { const x = this.W * .28; return this.gates.find(g => !g.scored && g.x + 34 >= x); }
   progress() { return clamp(this.seen / this.goalN); }
   hud() { return `${Math.min(this.seen, this.goalN)} / ${this.goalN}`; }
-  chips() { return [['Щиты', '♥'.repeat(Math.max(0, this.lives)) + '♡'.repeat(3 - Math.max(0, this.lives)), '#EE5D5D'], ['Ворота', `${this.passed}/${this.goalN}`], ['Кристаллы', this.gems]]; }
+  chips() { return [['Щиты', '♥'.repeat(Math.max(0, this.lives)) + '♡'.repeat(3 - Math.max(0, this.lives)), '#EE5D5D'], ['Ворота', `${this.passed}/${this.goalN}`], ['Кристаллы', this.gems], ...(SIX() ? [['Купол · супинация', this.shieldT > 0 ? 'включён' : this.shieldCd > 0 ? Math.ceil(this.shieldCd) + ' с' : 'готов', this.shieldT > 0 || this.shieldCd <= 0 ? '#9B78E8' : null]] : [])]; }
   hint() {
     if (!this.started) return 'Сожми К1 или К2 — взлёт. Сила сжатия задаёт высоту, цвет ворот — какой мышцей лететь';
     if (Ctrl.state === 'BOTH') return ['Одна мышца за раз — обе вместе не дают тяги', 'warn'];
@@ -351,6 +377,8 @@ class FlapGame {
     if (this.started) { this.vy += 1200 * this.k * dt; this.y += this.vy * dt; }
     else this.y = this.H * .45 + Math.sin(this.T * 3) * 8;
     if (this.inv > 0) this.inv -= dt;
+    if (this.shieldT > 0) this.shieldT -= dt; if (this.shieldCd > 0) this.shieldCd -= dt;
+    if (gesture(this, c) === 'supination' && this.started && this.shieldCd <= 0) { this.shieldT = 2.5; this.shieldCd = 12; this.shields++; this.inv = Math.max(this.inv, .01); Snd.ok(); this.ban.show('Купол!', '#fff', '#9B78E8', .8, 28); }
     this.next -= dt;
     if (this.next <= 0 && this.started && this.seen + this.gates.length < this.goalN) {
       const gap = this.H * (.4 - this.diff * .04), cy = rnd(gap / 2 + 40 * this.k, this.H * .86 - gap / 2);
@@ -369,11 +397,11 @@ class FlapGame {
       }
       if (g.gem && Math.hypot(g.x - x, g.cy - this.y) < r + 16) { g.gem = false; this.gems++; Snd.coin(); this.fx.burst(g.x, g.cy, ['#B79CF0', '#fff'], 12, 200, true); }
       const inX = Math.abs(g.x - x) < 30 + r * .6, out = this.y - r < g.cy - g.gap / 2 || this.y + r > g.cy + g.gap / 2;
-      if (inX && out && this.inv <= 0 && !g.hit) { g.hit = true; this.hurt(); }
+      if (inX && out && this.inv <= 0 && !g.hit) { g.hit = true; if (this.shieldT > 0) { this.fx.ring(this.W * .28, this.y, '#B79CF0', 34); Snd.coin(); } else this.hurt(); } // купол гасит удар
     });
     this.gates = this.gates.filter(g => g.x > -70);
     const ground = this.H * .9;
-    if (this.started && (this.y > ground - r || this.y < r)) { this.y = clamp(this.y, r, ground - r); this.vy = this.y < this.H / 2 ? 120 : -380 * this.k; if (this.inv <= 0) this.hurt(); }
+    if (this.started && (this.y > ground - r || this.y < r)) { this.y = clamp(this.y, r, ground - r); this.vy = this.y < this.H / 2 ? 120 : -380 * this.k; if (this.inv <= 0 && this.shieldT <= 0) this.hurt(); }
   }
   win() { this.endT = 1.6; Snd.win(); this.ban.show('Маршрут пройден!', '#fff', '#3DB37A', 1.6, 32); this.fx.burst(this.W / 2, this.H * .4, ['#FF9A5E', '#FFD27A', '#7FD3A8', '#86C5F0'], 50, 380, true); }
   hurt() {
@@ -410,6 +438,7 @@ class FlapGame {
       drone(ctx, x, this.y, r, t, clamp(this.vy / 900, -.45, .6), this.charge > 0);
       ctx.strokeStyle = mc; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, this.y, r + 5, 0, 7); ctx.stroke();
       txt(ctx, this.mode ? 'К2' : 'К1', x, this.y + r + 16, 11, mc); chMark(ctx, this.mode ? 1 : 0, x + 16, this.y + r + 16, 4, mc);
+      if (this.shieldT > 0) { ctx.save(); ctx.globalAlpha = .35 + .25 * Math.sin(t * 10); ctx.strokeStyle = '#B79CF0'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(x, this.y, r + 14, 0, 7); ctx.stroke(); ctx.restore(); }
     }
     this.fx.draw(ctx);
     this.ban.draw(ctx, W / 2, H * .38);
@@ -442,6 +471,7 @@ class RhythmGame {
     const pool = LV(lv, [P1, P2, P3]), bars = LV(lv, [12, 14, 16]);
     for (let b = 1; b <= bars; b++) pick(pool).forEach(([o, lane, len]) => this.notes.push({ t: (b * 4 + o) * this.beat, lane, len: (len || 0) * this.beat }));
     if (!Ctrl.bothOK()) this.notes.forEach((n, i) => { if (n.lane === 2) n.lane = i % 2; }); // режим протеза без «обе мышцы» или СПППР на 2 жеста
+    if (Bias.cur) this.notes.forEach(n => { if (n.lane < 2 && n.lane !== Bias.cur.weak && Math.random() < .3) n.lane = Bias.cur.weak; }); // баланс каналов
     this.end = (bars * 4 + 6) * this.beat;
   }
   resize(W, H) { this.W = W; this.H = H; }
@@ -546,9 +576,9 @@ class FishGame {
   constructor(lv) {
     this.diff = lv; this.T = 0; this.dur = LV(lv, [100, 110, 120]); this.done = false; this.fx = new FX(); this.ban = new Banner();
     this.goalN = LV(lv, [3, 4, 5]); this.caught = 0; this.lost = 0; this.scared = 0; this.inT = 0; this.fightT = 0; this.wave = 0; this.leakT = 0; this.sc = 0; this.bag = [];
-    this.zone = .3; this.newFish(); this.endT = 0;
+    this.zone = .3; this.newFish(); this.endT = 0; this.baits = 0;
   }
-  newFish() { this.ph = 'wait'; this.pt = 0; this.wait = rnd(1.6, 3.2); this.relaxT = 0; this.sp = FISH[Math.min(FISH.length - 1, Math.floor(Math.random() * (this.diff + 1.6)))]; this.fish = .5; this.fv = 0; this.ft = .5; this.ftT = 0; this.prog = .3; }
+  newFish() { this.ph = 'wait'; this.pt = 0; this.wait = rnd(1.6, 3.2); this.relaxT = 0; this.sp = FISH[Math.min(FISH.length - 1, Math.floor(Math.random() * (this.diff + 1.6)))]; this.fish = .5; this.fv = 0; this.ft = .5; this.ftT = 0; this.prog = .3; this.baited = false; }
   resize(W, H) { this.W = W; this.H = H; }
   progress() { return clamp(this.caught / this.goalN); }
   hud() { return fmtTime(this.dur - this.T); }
@@ -564,13 +594,14 @@ class FishGame {
   sw() { return this.W - this.mw() - 20; }
   bx() { return this.sw() * .62; }
   fishY() { const wy = this.wy(); return wy + 46 * this.u() + (this.H - wy - 100 * this.u()) * (1 - (this.fish ?? .5)); }
-  chips() { return [['Улов', `${this.caught}/${this.goalN}`], ['Сорвалось', this.lost], ['Рыба', this.ph === 'fight' ? this.sp.n : '—', this.ph === 'fight' ? this.sp.c : null]]; }
+  chips() { return [['Улов', `${this.caught}/${this.goalN}`], ['Сорвалось', this.lost], ['Рыба', this.ph === 'fight' ? this.sp.n : '—', this.ph === 'fight' ? this.sp.c : null], ...(SIX() ? [['Прикормка · приведение', this.baited ? 'брошена' : this.ph === 'wait' ? 'можно' : '—', this.ph === 'wait' && !this.baited ? '#9B78E8' : null]] : [])]; }
   hint() { if (this.endT) return ['Улов собран!', 'ok']; if (this.ph === 'wait') return 'Расслабь руку и жди поклёвку'; if (this.ph === 'bite') return ['Клюёт! Сожми К1!', 'act']; if (this.leak) return ['Одна мышца за раз — от встречного сигнала зона сжалась', 'warn']; return this.inZ ? ['Отлично, держи силу', 'ok'] : (this.fish > .5 ? 'Рыбка вверху — подтяни леску К1' : 'Рыбка внизу — отпусти леску К2'); }
   update(dt, c) {
     this.T += dt; this.wave += dt; this.fx.update(dt); this.ban.update(dt);
     if (this.endT) { this.endT -= dt; if (this.endT <= 0) this.done = true; return; }
     if (this.T >= this.dur) { this.done = true; return; }
     this.pt += dt;
+    const gg = gesture(this, c); if (gg === 'adduction' && this.ph === 'wait' && !this.baited) { this.baited = true; this.baits++; this.wait = Math.min(this.wait, this.pt + .6); Snd.splash(); this.ban.show('Прикормка!', '#fff', '#9B78E8', .8, 24); this.fx.ring(this.bx(), this.wy() + 4, '#B79CF0', 26); } // СПППР 6 жестов
     if (this.ph === 'wait') { if (c.state === 'REST') this.relaxT += dt; if (this.pt >= this.wait) { this.ph = 'bite'; this.pt = 0; this.biteT = 0; Snd.splash(); this.fx.ring(this.bx(), this.wy() + 4, '#fff', 20); } }
     else if (this.ph === 'bite') { this.biteT = this.pt; if (this.pt > 1.8) { this.ph = 'wait'; this.pt = 0; this.wait = rnd(1.2, 2.4); this.ban.show('Не успел подсечь', '#fff', '#F2A33A', .9, 22); } }
     else if (this.ph === 'fight') {
@@ -915,7 +946,7 @@ class BlindGame {
     // СПППР на 6 жестах (Q&A 22): с уровня 2 добавляются супинация, приведение и отведение — устойчивый жест Ctrl.g
     const six = C().mode === 'spppr' && C().spGest === 6;
     const set = ['CH1', 'CH2', 'REST'].concat(Ctrl.bothOK() && lv >= 2 ? ['BOTH'] : [], six && lv >= 2 ? ['G:supination', 'G:adduction', 'G:abduction'] : []); this.cmds = [];
-    let prev = 'REST'; for (let i = 0; i < this.N; i++) { const opts = set.filter(x => x !== prev && !(x === 'REST' && i === 0)); prev = pick(opts); this.cmds.push(prev); }
+    let prev = 'REST'; for (let i = 0; i < this.N; i++) { const opts = set.filter(x => x !== prev && !(x === 'REST' && i === 0)); prev = Bias.pick(opts); this.cmds.push(prev); }
     this.i = 0; this.ph = 'gap'; this.pt = 0; this.gap = 1.4; this.ok = 0; this.miss = 0; this.wrong = 0; this.rts = []; this.holdT = 0; this.sc = 0; this.flash = null;
   }
   resize(W, H) { this.W = W; this.H = H; }
@@ -984,7 +1015,7 @@ class ReactGame {
     return k;
   }
   newCue() {
-    const opts = ['CH1', 'CH2', 'CH1', 'CH2', 'NOGO']; if (this.diff >= 2) opts.push('NOGO', 'CH1', 'CH2');
+    const opts = ['CH1', 'CH2', 'CH1', 'CH2', 'NOGO']; if (this.diff >= 2) opts.push('NOGO', 'CH1', 'CH2'); if (Bias.cur) opts.push(Bias.cur.weak ? 'CH2' : 'CH1', Bias.cur.weak ? 'CH2' : 'CH1');
     this.cueSet().slice(3).forEach(k => opts.push(k, k));
     let c; do c = pick(opts); while (c === this.cue && Math.random() < .5);
     this.cue = c; this.ph = 'cue'; this.t = 0; Snd.go();
@@ -1061,7 +1092,7 @@ class ReactGame {
       drawHand(ctx, 'relax', cx, cy, R * 1.45, .32);
       txt(ctx, 'Приготовься…', tx, ty, 22 * s, ink('#3B2F2A')); txt(ctx, 'держи обе мышцы расслабленными', tx, ty + 26 * s, 13 * s, ink('#9C8B7F'), 800);
     } else if (this.ph === 'cue') {
-      const [c, im, label, sub] = M[this.cue], lim = this.cue === 'NOGO' ? 1.3 : this.lim, k = clamp(this.t / lim);
+      const [c, im, label, sub0] = M[this.cue], sub = musText(sub0), lim = this.cue === 'NOGO' ? 1.3 : this.lim, k = clamp(this.t / lim);
       const gg = ctx.createRadialGradient(cx, cy - R * .3, R * .1, cx, cy, R); gg.addColorStop(0, shade(c, .35)); gg.addColorStop(1, c);
       ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(cx, cy, R - 6, 0, 7); ctx.fill();
       ctx.strokeStyle = c; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy, R + 2, -Math.PI / 2, -Math.PI / 2 + 6.283 * (1 - k)); ctx.stroke(); ctx.lineCap = 'butt';
@@ -1113,7 +1144,7 @@ function schoolSteps() {
   let st = SCHOOL_STEPS.filter(x => !x.both || (Ctrl.bothOK() && !six));
   if (six) st = st.concat(SCHOOL_SP6);
   if (C().mode === 'spppr') st = st.map(x => ({ ...x, t: x.t.replace('Сожми кулак', 'Согни кисть').replace('Раскрой ладонь', 'Разогни кисть'), d: x.d.replace('сгибатели (К1)', 'сгибание').replace('разгибатели (К2)', 'разгибание') }));
-  return st;
+  return st.map(x => ({ ...x, d: musText(x.d) })); // подписи мышц под пользователя
 }
 class SchoolGame {
   constructor() { this.steps = schoolSteps(); this.T = 0; this.done = false; this.fx = new FX(); this.ban = new Banner(); this.N = this.steps.length; this.i = 0; this.p = 0; this.err = 0; this.pause = 0; this.si = 0; this.sc = 0; this.stepT = 0; }
@@ -1180,13 +1211,13 @@ class SchoolGame {
 /* =================== Каталог игр =================== */
 const GAMES = {
   race: { cls: RaceGame, tone: 'peach', t: 'Нейро-гонка', d: 'Доберись до финиша: руль — разница силы К2 и К1', skill: 'Пропорциональное управление', tile: 't-peach', ic: 'car',
-    goal: lv => `Доехать до финиша: ${LV(lv, [2200, 3200, 4200])} м`, ctl: [['К1', 'руль влево (сила = резкость)', '#F27D45'], ['К2', 'руль вправо', '#3E9FD6'], ['Обе', 'нитро-ускорение', '#9B78E8']] },
+    goal: lv => `Доехать до финиша: ${LV(lv, [2200, 3200, 4200])} м`, ctl: [['К1', 'руль влево (сила = резкость)', '#F27D45'], ['К2', 'руль вправо', '#3E9FD6'], ['Обе', 'нитро-ускорение', '#9B78E8'], ['Супинация', 'гудок: машина впереди уступит полосу (СПППР, 6 жестов)', '#9B78E8']] },
   flap: { cls: FlapGame, tone: 'sky', t: 'Искра', d: 'Проведи дрона через ворота: цвет ворот — какой мышцей лететь', skill: 'Тайминг, сила и переключение', tile: 't-sky', ic: 'bird',
-    goal: lv => `Пролететь ${LV(lv, [12, 16, 20])} ворот, половину и больше — нужным каналом`, ctl: [['К1', 'взмах у оранжевых ворот', '#F27D45'], ['К2', 'взмах у голубых ворот', '#3E9FD6'], ['Сила', 'чем сильнее — тем выше', '#3DB37A'], ['Покой', 'дрон плавно снижается', '#C8BAAE']] },
+    goal: lv => `Пролететь ${LV(lv, [12, 16, 20])} ворот, половину и больше — нужным каналом`, ctl: [['К1', 'взмах у оранжевых ворот', '#F27D45'], ['К2', 'взмах у голубых ворот', '#3E9FD6'], ['Сила', 'чем сильнее — тем выше', '#3DB37A'], ['Покой', 'дрон плавно снижается', '#C8BAAE'], ['Супинация', 'купол на 2.5 с, раз в 12 с (СПППР, 6 жестов)', '#9B78E8']] },
   rhythm: { cls: RhythmGame, tone: 'lilac', t: 'Ритм-пульс', d: 'Лови ноты нужной мышцей и удерживай длинные', skill: 'Переключение каналов', tile: 't-lilac', ic: 'music',
     goal: lv => `Сыграть мелодию: ${LV(lv, [78, 92, 106])} уд/мин, ≥60% нот`, ctl: [['К1', 'левая дорожка', '#F27D45'], ['К2', 'правая дорожка', '#3E9FD6'], ['Удержание', 'длинные ноты', '#3DB37A'], ...[]] },
   fish: { cls: FishGame, tone: 'mint', t: 'Рыбалка', d: 'Расслабься, подсеки и веди рыбку: К1 подтягивает, К2 отпускает', skill: 'Контроль силы и покой', tile: 't-mint', ic: 'fish',
-    goal: lv => `Поймать ${LV(lv, [3, 4, 5])} рыбы`, ctl: [['Покой', 'ждём поклёвку — не шевелись', '#C8BAAE'], ['К1 рывок', 'подсечка, когда клюёт', '#F27D45'], ['Сила К1', 'подтянуть — зона вверх', '#F27D45'], ['Сила К2', 'отпустить — зона вниз', '#3E9FD6']] },
+    goal: lv => `Поймать ${LV(lv, [3, 4, 5])} рыбы`, ctl: [['Покой', 'ждём поклёвку — не шевелись', '#C8BAAE'], ['К1 рывок', 'подсечка, когда клюёт', '#F27D45'], ['Сила К1', 'подтянуть — зона вверх', '#F27D45'], ['Сила К2', 'отпустить — зона вниз', '#3E9FD6'], ['Приведение', 'прикормка: поклёвка скорее, раз на рыбу (СПППР, 6 жестов)', '#9B78E8']] },
   mug: { cls: MugGame, tone: 'rose', t: 'Горячая кружка', d: 'Возьми, донеси и поставь кружку: не раздави, не урони, не пролей', skill: 'Дозирование хвата', tile: 't-rose', ic: 'cup',
     goal: lv => `Донести ${LV(lv, [4, 5, 6])} кружки до подставки`, ctl: [['К2', 'раскрыть кисть перед кружкой и чтобы поставить', '#3E9FD6'], ['К1', 'сжать до зелёной зоны хвата', '#F27D45'], ['Покой', 'протез держит хват — неси спокойно', '#C8BAAE'], ['Обе', 'нельзя: чай расплёскивается, а долгое «обе» меняет хват — кружка выпадет', '#EE5D5D']] },
   blind: { cls: BlindGame, tone: 'lilac', t: 'Без экрана', d: 'Команды звучат голосом — смотри на руку, а не на телефон', skill: 'Связь «мышца — действие»', tile: 't-lilac', ic: 'ear',

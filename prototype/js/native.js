@@ -194,9 +194,30 @@ const Native = (() => {
     return 'saved';
   }
 
+  /* ---------- Напоминание о тренировке ----------
+     APK: @capacitor/local-notifications — придёт, даже если приложение закрыто. Браузер: Notification API,
+     пока вкладка открыта. Одно уведомление на ближайший раз (id 1001), приложение переносит его само. */
+  const LN = P('LocalNotifications'); let webT = 0;
+  async function remind(at, title, body, ask = false) {
+    if (LN) {
+      try {
+        await LN.cancel({ notifications: [{ id: 1001 }] }).catch(() => { }); if (!at) return 'off';
+        let p = await LN.checkPermissions(); if (p.display !== 'granted' && ask) p = await LN.requestPermissions();
+        if (p.display !== 'granted') return 'denied';
+        await LN.schedule({ notifications: [{ id: 1001, title, body, schedule: { at, allowWhileIdle: true } }] }); return 'native';
+      } catch (e) { console.warn('[Native] напоминание', e); return 'error'; }
+    }
+    clearTimeout(webT); if (!at) return 'off';
+    if (typeof Notification === 'undefined') return 'none';
+    if (Notification.permission === 'default' && ask) await Notification.requestPermission().catch(() => { });
+    if (Notification.permission !== 'granted') return 'denied';
+    const ms = at - Date.now(); if (ms > 0 && ms < 2 ** 31 - 1) webT = setTimeout(() => { try { new Notification(title, { body, icon: 'img/own/kineta-icon.svg', tag: 'kineta-remind' }); } catch (e) { } }, ms);
+    return 'web';
+  }
+
   /* ---------- Статус-бар под тему ---------- */
   const SB = P('StatusBar');
   function statusBar(dark, color) { if (!SB) return; SB.setStyle({ style: dark ? 'DARK' : 'LIGHT' }).catch(() => { }); SB.setBackgroundColor?.({ color }).catch(() => { }); }
 
-  return { isNative, statusBar, vibrate, say, hush, saveFile, fullUuid, hexToDv, toHex, voiceKey, voiceInfo, loadClips, hasTTS: () => !!TTS || 'speechSynthesis' in window };
+  return { isNative, statusBar, vibrate, say, hush, saveFile, fullUuid, hexToDv, toHex, voiceKey, voiceInfo, loadClips, remind, hasTTS: () => !!TTS || 'speechSynthesis' in window };
 })();

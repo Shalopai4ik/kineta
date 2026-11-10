@@ -851,3 +851,12 @@ body.big .gctl .pad span{font-size:14px}
 .lrow.ep .tag{flex:none;letter-spacing:1px;color:#FFB524}.lrow.ep .tag span{color:var(--line)}
 .intro .ep-t{display:block;font-size:12px;font-weight:800;color:var(--muted);margin:4px 0 -2px;letter-spacing:.02em}
 .board .kv b{font-size:13px}
+
+/* ---------- 3.6: детский режим ---------- */
+body.kids .ginfo{display:none}
+body.kids .ghint{font-size:17px}
+.kids-res .kbot{display:grid;place-items:center;margin:6px 0 2px;animation:pop2 .6s var(--spring) both}
+.kbubble{position:relative;margin:14px auto 0;max-width:330px;background:var(--card);box-shadow:var(--shadow);border-radius:20px;padding:14px 16px;font-size:17px;font-weight:800;line-height:1.35}
+.kbubble:before{content:'';position:absolute;top:-8px;left:50%;margin-left:-8px;border:8px solid transparent;border-top:0;border-bottom-color:var(--card)}
+.kbubble small{display:block;margin-top:6px;font-size:14px;font-weight:700;color:var(--muted)}
+.qrbox{display:grid;place-items:center;margin:12px auto 0;background:#fff;border-radius:16px;padding:10px;width:max-content}.qrbox svg{display:block;width:220px;height:220px}

@@ -240,6 +240,7 @@ applyTheme(); applyMirror(); applyBig(); renderEmu(); Ctrl.restart(); Mission.en
 if (C().remote) Remote.connect(C().remote);
 App.go(S.onboarded ? 'home' : 'onboard', {}, { fade: true });
 if (S.onboarded) touchStreak();
+if (C().remindOn) setTimeout(() => Reminder.sync(), 2500); // перенести напоминание на ближайший раз
 if (S.device.real) BT.restore().then(ok => { if (!ok) setTimeout(() => toast('bt', 'Подключите протез снова', 'Экран «Мой протез» → Подключить'), 1500); });
 setTimeout(() => $('#splash').classList.add('out'), qs.has('embed') ? 0 : 1500);
 setTimeout(() => $('#splash')?.remove(), 2300);

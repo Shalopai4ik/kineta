@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { launch, sleep, out, root, BOT, STOP } from './cdp.mjs';
 
-const { js, shot, size, go, step, report } = await launch();
+const { js, shot, size, go, step, report, cdp, base } = await launch();
 
 await step('Онбординг на чистой установке, без демо-данных', async () => {
   await go('?reset=1');
@@ -202,6 +202,42 @@ await step('Таблица клуба: relay в локальной сети пр
     if (!(await js('document.querySelector("#wClub").innerText.includes("Алексей Ёжиков (вы)")'))) throw new Error('таблица клуба не показана в испытании недели');
     await shot('33-club-board');
     await js('document.querySelectorAll(".sheet").forEach(s => s.close?.()); C().club = ""; save(true)'); await sleep(400);
+  } finally { relay.kill(); }
+});
+await step('Идеи 3–6: подписи мышц, напоминание, детский режим, отчёт по ссылке с QR', async () => {
+  await size(390, 844); await go('?reset=1', 1500); await js('S.onboarded = true; S.perms.bt = "demo"; C().quickCal = false; save(true)'); await go('', 2500);
+  // 3. подписи мышц
+  await js('App.go("sensors", {}, { fade: true })'); await sleep(800); await js('document.querySelector("[data-seg=mus] [data-v=arm]").click()'); await sleep(300);
+  await js('App.go("calib", {}, { fade: true })'); await sleep(700);
+  if (!(await js('document.body.innerText.includes("бицепс") && !document.body.innerText.includes("сгибатели")'))) throw new Error('подписи мышц не применились');
+  await shot('34-calib-biceps'); await js('C().mus = "wrist"; save(true)');
+  // 4. напоминание
+  await cdp('Browser.grantPermissions', { origin: base.replace(/\/$/, ''), permissions: ['notifications'] });
+  await js('App.go("profile", {}, { fade: true })'); await sleep(800); await js('document.querySelector("[data-sw=remindOn]").click()'); await sleep(600);
+  if (!(await js('C().remindOn && document.body.innerText.includes("Напоминание в 19:00")'))) throw new Error('напоминание не включилось');
+  const nx = await js('(() => { const d = Reminder.next(new Date(2026, 10, 11, 10, 0)); return [d.getDate(), d.getHours()]; })()');
+  if (nx[0] !== 11 || nx[1] !== 19) throw new Error('ближайшее напоминание: ' + nx);
+  await js('today().min = 3'); const nx2 = await js('Reminder.next().getDate() !== new Date().getDate()'); if (!nx2) throw new Error('после тренировки напоминание должно сдвинуться на завтра');
+  // 5. детский режим
+  await js('document.querySelector("[data-sw=kids]").click()'); await sleep(400);
+  if (!(await js('document.body.classList.contains("kids") && C().big && C().sessionMin <= 8'))) throw new Error('детский режим не включился');
+  await js(`KinetaTrainer.open('react', { diff: 1 })`); await sleep(900); await js(`SCR.play.begin(App.cur.el); ${BOT}`); await sleep(5000); await js(`${STOP} SCR.play.finish()`); await sleep(1500);
+  if (!(await js('!!document.querySelector(".kbubble") && !document.querySelector(".res-grid")'))) throw new Error('нет детского экрана результата');
+  await shot('35-kids-result'); await js('C().kids = false; C().big = false; applyBig(); save(true)');
+  // 6. отчёт по ссылке
+  const port = 19000 + Math.floor(Math.random() * 900), relay = spawn(process.execPath, [root + '/tools/relay.mjs', String(port)], { stdio: 'ignore' });
+  try {
+    await sleep(900); await js(`C().club = "http://127.0.0.1:${port}"; save(true); App.go("progress", {}, { fade: true })`); await sleep(1000);
+    await js('document.querySelector("#pLink").click()'); await sleep(2000);
+    const link = await js('document.querySelector(".qrbox svg") && document.querySelector("#rlBody a")?.href');
+    if (!link || !/\/r\/[a-f0-9]{16}$/.test(link)) throw new Error('нет QR и ссылки: ' + link);
+    const res = await fetch(link), html = await res.text();
+    if (!html.includes('Ключевые показатели')) throw new Error('по ссылке не отчёт');
+    if (!/sandbox/.test(res.headers.get('content-security-policy') || '')) throw new Error('отчёт отдаётся без CSP sandbox');
+    if ((await fetch(`http://127.0.0.1:${port}/r/0000000000000000`)).status !== 404) throw new Error('несуществующий отчёт не 404');
+    if ((await fetch(`http://127.0.0.1:${port}/report`, { method: 'POST', body: '<script>alert(1)</script>' })).status !== 422) throw new Error('relay принял не отчёт');
+    await shot('36-report-qr');
+    await js('document.querySelectorAll(".sheet").forEach(s => s.close?.()); C().club = ""; C().remindOn = false; save(true)'); await sleep(400);
   } finally { relay.kill(); }
 });
 report();

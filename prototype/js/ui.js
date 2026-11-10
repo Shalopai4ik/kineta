@@ -334,6 +334,29 @@ function gameMap(tl) {
     <p class="sub small" style="margin:6px 0 0">${ep ? `Мышца-антагонист включалась ${plur(ep, 'раз', 'раза', 'раз')}, впервые на ${fmtTime(first)}. Красные отрезки — где держать вторую мышцу расслабленной.` : 'Встречных сокращений не было — каналы работали раздельно.'}</p></div>`;
 }
 
+/* ---------------- Идея 4: напоминание о тренировке (митап 11: компании важна активность использования протеза) ----------------
+   Ближайший раз в выбранное время; если сегодня уже тренировались — завтра. Текст: серия дней или миссия дня. */
+const Reminder = {
+  next(now = new Date()) {
+    const [h, m] = C().remindAt.split(':').map(Number), d = new Date(now); d.setHours(h, m, 0, 0);
+    const trained = (S.stats.days[dayKey(now)]?.min || 0) > 0 || S.history.some(x => !x.seed && dayKey(new Date(x.t)) === dayKey(now));
+    if (trained || d <= now) d.setDate(d.getDate() + 1);
+    return d;
+  },
+  text() {
+    const st = S.profile.streak, m = S.missions?.list?.find(x => !x.done), def = m && MISSIONS.find(x => x.id === m.id);
+    if (st >= 2) return `Серия ${plur(st, 'день', 'дня', 'дней')} — не прерывай: 5 минут тренировки`;
+    if (def) return `Миссия дня: ${def.t}`;
+    return 'Пара минут с протезом — и рука слушается лучше';
+  },
+  async sync(ask = false) { const on = C().remindOn; return Native.remind(on ? this.next() : null, 'Kineta · пора тренироваться', this.text(), ask); }
+};
+/* ---------------- Идея 5: детский режим (митап 8: пользователи с 12 лет) ----------------
+   Крупно, меньше цифр, говорит робот Кинетик, сеансы короче. */
+const KIDS_SAY = ['Не беда! Я тоже не сразу научился. Попробуем ещё?', 'Получилось! Давай ещё раз — будет лучше.', 'Здорово! Ещё чуть-чуть — и будет три звезды.', 'Ура! Ты настоящий мастер сигналов!'];
+function kidsTip(r) { return r.noAct ? 'Чтобы игра заметила тебя, напрягай мышцы — К1 или К2.' : r.purity != null && r.purity < .7 ? 'Когда работает одна мышца, вторая отдыхает. Попробуй!' : r.bal != null && (r.bal > .72 || r.bal < .28) ? `Дай поработать и второй мышце — К${r.bal > .5 ? 2 : 1}.` : r.fat != null && r.fat > .25 ? 'Мышцы устали — давай отдохнём пару минут.' : r.stars >= 2 ? 'Так держать!' : r.win === false ? 'Попробуй ещё раз — ты уже близко!' : 'Сжимай и раскрывай чётко, по одной мышце, — и звёзд станет больше.'; }
+function applyKids() { document.body.classList.toggle('kids', !!C().kids); }
+
 /* =====================================================================
    РОУТЕР
    ===================================================================== */
@@ -356,7 +379,7 @@ const App = {
     if (transient(name)) this.stack = this.stack.filter(x => !transient(x.name));
     const el = document.createElement('div');
     el.className = 'page ' + (sc.full ? 'full ' : '') + (opt.fade ? 'fade ' : '') + 'enter' + (opt.back ? ' back' : '');
-    el.innerHTML = sc.render(p); view.appendChild(el);
+    el.innerHTML = musText(sc.render(p), true); view.appendChild(el); // подписи мышц под пользователя
     this.cur = { name, sc, el, p };
     $('#tabs').classList.toggle('off', !sc.tab);
     if (sc.tab) { const i = TABS.indexOf(sc.tab); $$('#tabs button').forEach((b, k) => b.classList.toggle('on', k === i)); $('#tabs .blob').style.transform = `translateX(${i * 100}%)`; }
@@ -367,7 +390,7 @@ const App = {
   /* перерисовка текущего экрана: новый элемент — старые обработчики не копятся */
   refresh() {
     if (!this.cur) return; const { sc, el, p } = this.cur, top = el.scrollTop; sc.unmount?.(el);
-    const n = document.createElement('div'); n.className = 'page ' + (sc.full ? 'full' : ''); n.innerHTML = sc.render(p); el.replaceWith(n);
+    const n = document.createElement('div'); n.className = 'page ' + (sc.full ? 'full' : ''); n.innerHTML = musText(sc.render(p), true); el.replaceWith(n);
     this.cur.el = n; sc.mount?.(n, p); n.scrollTop = top; animateIn(n);
   }
 };
@@ -832,6 +855,10 @@ SCR.sensors = {
       <div class="row"><button class="btn ghost" id="tOpen">${ic('hand')} Открыть</button><button class="btn ghost" id="tClose">${ic('hand')} Закрыть</button></div>
       <h2>Профиль комфорта <small class="h2s">пороги + сглаживание</small></h2>
       <div class="presets" id="sPre">${Object.entries(PRESETS).map(([k, p]) => `<button data-p="${k}" class="${c.preset === k ? 'on' : ''}">${ic(p.e)}${p.n}<small class="muted" style="font-size:10.5px;font-weight:600">${p.d}</small></button>`).join('')}</div>
+      <h2>Где стоят датчики <small class="h2s">подписи мышц в игре</small></h2>
+      <div class="card">${seg('mus', [['wrist', 'Мышцы кисти'], ['arm', 'Бицепс / трицепс'], ['custom', 'Свои']], c.mus)}
+        <div class="row ${c.mus === 'custom' ? '' : 'hidden'}" id="musC" style="margin-top:10px"><input class="txt" id="musA" maxlength="20" placeholder="мышца К1" value="${esc(c.musN[0])}" style="flex:1;min-width:0"><input class="txt" id="musB" maxlength="20" placeholder="мышца К2" value="${esc(c.musN[1])}" style="flex:1;min-width:0"></div>
+        <p class="sub small" style="margin:8px 2px 0">Датчики ставят на мышцы, которые лучше работают. Название меняет подсказки, калибровку и Школу; сигнал и пороги не меняются.</p></div>
       <h2>Калибровка</h2>
       <button class="card set tap" data-go="signal" style="width:100%;text-align:left;padding:14px 16px;margin-bottom:10px"><div class="ico">${ic('flow')}</div><div style="flex:1">Как работает сигнал<small>Сырой сигнал → сглаживание → порог → состояние, задержка вживую</small></div><span class="chev">${ic('chev')}</span></button>
       <button class="card set tap" data-go="calib" style="width:100%;text-align:left;padding:14px 16px"><div class="ico">${ic('calib')}</div><div style="flex:1">${S.calib.done ? 'Откалибровано' : 'Не откалибровано'}<small>${S.calib.done ? 'Последняя: ' + new Date(S.calib.at).toLocaleDateString('ru-RU') + ' · пройти заново' : 'Измерим покой и максимальное усилие мышц'}</small></div><span class="chev">${ic('chev')}</span></button>
@@ -850,6 +877,8 @@ SCR.sensors = {
     };
     $('#rmB', el).onclick = () => { if (Remote.on || C().remote) { Remote.stop(); toast('wave', 'Удалённый эмулятор отключён'); } else Remote.connect($('#rmU', el).value); setTimeout(() => App.cur?.name === 'sensors' && App.refresh(), 300); };
     bindSeg(el, 'co', v => { c.coMode = v; save(); $('#coD', el).textContent = CO_D[v]; });
+    bindSeg(el, 'mus', v => { c.mus = v; save(); $('#musC', el).classList.toggle('hidden', v !== 'custom'); toast('sliders', 'Мышцы: ' + musNames().join(' / ')); });
+    ['musA', 'musB'].forEach((id, i) => $('#' + id, el).addEventListener('change', e => { c.musN[i] = e.target.value.replace(/[<>]/g, '').trim().slice(0, 20); e.target.value = c.musN[i]; save(); toast('sliders', 'Мышцы: ' + musNames().join(' / ')); }));
     bindSeg(el, 'ts', v => { c.thrSrc = v; Ctrl.applyDevThr(); save(); this.place(el); $('#tsD', el).textContent = thrDesc(); });
     bindSeg(el, 'spg', v => { c.spGest = +v; save(); renderEmu(); setTimeout(() => App.cur?.name === 'sensors' && App.refresh(), 300); });
     ['thr1', 'thr2'].forEach((id, k) => {
@@ -943,7 +972,7 @@ SCR.calib = {
         row.classList.add('now');
         $('#cT', el).textContent = t; $('#cD', el).textContent = 'Приготовьтесь…'; $('#cN', el).textContent = '•'; $('#cS', el).textContent = 'сейчас начнём'; this.setRing(el, 0);
         await sleep(1100); if (dead()) return id === this.runId && this.stop(el);
-        $('#cD', el).textContent = d; Snd.go();
+        $('#cD', el).textContent = musText(d); Snd.go();
         const vals = await this.measure(el, 3000, dead); if (!vals) return id === this.runId && this.stop(el);
         const c1 = vals.map(v => v[0]), c2 = vals.map(v => v[1]);
         let msg = '';
@@ -954,7 +983,7 @@ SCR.calib = {
           if (peak - base < .25) msg = 'Сокращение слишком слабое — напрягите сильнее и держите все 3 секунды';
           else if (med(other) > peak * .7) msg = 'Вторая мышца тоже напряглась — постарайтесь сократить только ' + (ch ? 'разгибатели (К2)' : 'сгибатели (К1)');
         }
-        if (msg) { tries++; Snd.bad(); $('#cD', el).textContent = msg; toast('info', 'Повторим шаг', msg); await sleep(1600); if (dead()) return id === this.runId && this.stop(el); if (tries >= 3) { this.stop(el, 'Не получилось — проверьте датчики и попробуйте снова'); return; } }
+        if (msg) { msg = musText(msg); tries++; Snd.bad(); $('#cD', el).textContent = msg; toast('info', 'Повторим шаг', msg); await sleep(1600); if (dead()) return id === this.runId && this.stop(el); if (tries >= 3) { this.stop(el, 'Не получилось — проверьте датчики и попробуйте снова'); return; } }
         else ok = true;
       }
       row.classList.remove('now'); row.classList.add('done'); $('.cn', row).innerHTML = ic('check'); Snd.ok();
@@ -992,7 +1021,7 @@ const plur = (n, a, b, c) => { const m = n % 10, h = n % 100; return n + ' ' + (
 const playsOf = id => Math.max(S.games[id]?.plays || 0, S.history.filter(h => h.game === id).length);
 const bestScore = id => Math.max(S.games[id]?.best || 0, ...S.history.filter(h => h.game === id && h.win !== false).map(h => h.score || 0));
 const starStr = n => `${'★'.repeat(n)}<span>${'★'.repeat(3 - n)}</span>`;
-const ctlList = g => `<div class="ctl-list">${g.ctl.map(([a, b, c]) => `<div><i style="--c:${c}">${a}</i><span>${b}</span></div>`).join('')}</div>`;
+const ctlList = g => `<div class="ctl-list">${g.ctl.filter(r => SIX() || !/6 жестов/.test(r[1])).map(([a, b, c]) => `<div><i style="--c:${c}">${a}</i><span>${b}</span></div>`).join('')}</div>`;
 SCR.games = {
   tab: 'games',
   render() {
@@ -1069,7 +1098,7 @@ SCR.play = {
   mount(el, p) {
     // Q&A 12: в игровом режиме движение протеза отключают — настоящему протезу уходит команда (если протокол её принимает)
     BT.send({ cmd: 'game', active: true, game: p.id });
-    Rewards.list = []; this.p = p; if (p.duel) Duel.useCal(p.duel); this.game = new GAMES[p.id].cls(p.diff || 1); this.paused = true; this.ended = false; this.lastScore = 0; this.intro = true; this.sq = 0; this.lastChips = ''; this.lastHint = null; this.qc = null; this.tl = []; this.tlT = 0;
+    Rewards.list = []; this.p = p; if (p.duel) Duel.useCal(p.duel); Bias.cur = p.duel || GAMES[p.id].tut ? null : Bias.get(); this.bias = Bias.note(); this.game = new GAMES[p.id].cls(p.diff || 1); this.paused = true; this.ended = false; this.lastScore = 0; this.intro = true; this.sq = 0; this.lastChips = ''; this.lastHint = null; this.qc = null; this.tl = []; this.tlT = 0;
     this.cv = $('#gc', el); this.ctx = this.cv.getContext('2d'); this.fit();
     $$('.pad', el).forEach(bindPad);
     $('#gP', el).onclick = () => this.intro ? App.back() : this.pause();
@@ -1094,7 +1123,7 @@ SCR.play = {
   quickStep(dt, el) {
     const q = this.qc, [t, d, dur] = this.QC[q.i]; q.t += dt;
     (q.c[q.i] ||= [[], []]); q.c[q.i][0].push(Ctrl.raw[0]); q.c[q.i][1].push(Ctrl.raw[1]);
-    const T = $('#qcT', el); if (T && T.textContent !== t) { T.textContent = t; $('#qcD', el).textContent = d; Snd.tick(); }
+    const T = $('#qcT', el); if (T && T.textContent !== t) { T.textContent = t; $('#qcD', el).textContent = musText(d); Snd.tick(); }
     const P = $('#qcP', el); if (P) P.style.width = pct(clamp(q.t / dur));
     if (q.t >= dur) { q.i++; q.t = 0; if (q.i >= this.QC.length) this.quickEnd(el, q.c); }
   },
@@ -1150,6 +1179,7 @@ SCR.play = {
     const chips = (g.chips?.() || []).map(([k, v, c]) => `<span${c ? ` style="--c:${c}"` : ''}><em>${k}</em>${v}</span>`).join('');
     if (chips !== this.lastChips) { $('#gChips', el).innerHTML = chips; this.lastChips = chips; }
     const h = this.intro ? '' : this.paused ? 'Приготовься…' : Ctrl.blocked ? ['Блокировка: обе мышцы выше порога — расслабь лишнюю', 'warn'] : g.hint?.() || ''; const H = Array.isArray(h) ? h : [h, ''];
+    H[0] = musText(H[0]);
     if (H.join() !== this.lastHint) { const he = $('#gHint', el); he.textContent = H[0]; he.className = 'ghint ' + (H[1] || ''); this.lastHint = H.join(); Voice.hint(H, this.p.id); }
     const ck = Ctrl.blocked ? 'LOCK' : Ctrl.state, ch = $('#gChip', el), s = Ctrl.blocked ? LOCK_ST : ST[Ctrl.state]; if (ch && ch._s !== ck) { ch._s = ck; ch.style.setProperty('--sc', s.hex); ch.classList.toggle('on', ck !== 'REST'); $('span', ch).textContent = s.n; }
     $$('.pad', el).forEach(p => { const i = +p.dataset.ch; $('.fill', p).style.height = pct(Ctrl.a[i]); $('.thl', p).style.bottom = pct(C()['thr' + (i + 1)]); p.classList.toggle('hot', Ctrl.on[i]); });
@@ -1160,6 +1190,7 @@ SCR.play = {
     if (r.bal != null) r.extra.push(['Баланс К1 / К2', `${Math.round(r.bal * 100)} / ${100 - Math.round(r.bal * 100)} %`]);
     if (r.fat != null) r.extra.push(['Сила к концу игры', r.fat > .05 ? '−' + Math.round(r.fat * 100) + ' %' : 'без спада']);
     if (Ctrl.m && C().mode === 'spppr') { const gs = Object.entries(Ctrl.m.gest); if (gs.length) r.extra.push(['Жесты СПППР', gs.map(([k, n]) => SPN[k].slice(0, 4) + '. ' + n).join(' · ')]); }
+    if (this.bias && ['flap', 'rhythm', 'blind', 'react'].includes(id)) r.bias = this.bias;
     Session.fatigue = r.fat != null && r.fat > .25; r.stars = r.win === false ? 0 : starsFor(r.acc, purity ?? r.acc);
     // без сокращений мышц звёзд нет: уровень не открывается «сам», даже если сцена дошла до конца (машина в гонке едет сама)
     if (!GAMES[id].tut && Ctrl.m && Ctrl.m.active + Ctrl.m.tb < .5) { r.stars = 0; r.noAct = true; }
@@ -1186,7 +1217,7 @@ SCR.play = {
     const xp = Math.round((40 + r.stars * 30 + (endless ? 60 : lv * 15) + Math.min(60, r.score / 50)) * (r.daily2 ? 2 : 1) * (r.win === false ? .5 : 1)); r.xp = xp; addXP(xp); touchStreak();
     // миссии качества засчитываются только за пройденный уровень, а не за любую попытку
     Mission.ev('game'); if (r.win !== false && purity != null && purity >= .8) Mission.ev('pure80'); if (r.stars >= 3) Mission.ev('stars3'); if (record) Mission.ev('record');
-    r.story = Story.after(id); r.record = record; save(); checkAch(); Bus.emit('level:end', { game: id, ...r });
+    r.story = Story.after(id); r.record = record; save(); checkAch(); Reminder.sync(); Bus.emit('level:end', { game: id, ...r });
     r.rewards = Rewards.list.splice(0);
     // если игрок уже ушёл с экрана игры — не перебрасываем его на результат
     setTimeout(() => { if (App.cur?.name === 'play' && this.game === g) App.go('result', { id, r, diff: lv, daily: this.p.daily, endless, weekly: this.p.weekly, story: this.p.story }, { fade: true }); }, 600);
@@ -1217,6 +1248,11 @@ SCR.result = {
       : r.win === false ? 'Сигнал хороший, но цель уровня не выполнена. Сыграй ещё раз до конца — ты уже близко.'
       : r.stars >= 3 ? 'Сигнал чистый и точный. Можно повышать уровень.' : 'Хороший результат. Для трёх звёзд держи вторую мышцу полностью расслабленной.';
     const next = !tut && !p.endless && lv < 3 && unlockedLv(p.id) > lv, lvT = p.endless ? 'бесконечный, сложность ' + lv.toFixed(1) : 'уровень ' + lv;
+    if (C().kids) return `<div class="result-hero kids-res"><div class="kbot">${robotSVG(8, 96)}</div><h1>${r.win === false ? 'Почти!' : tut ? 'Ты прошёл Школу!' : 'Молодец!'}</h1><div class="starsrow">${starsSvg(r.stars)}</div>
+      <div class="kbubble">${KIDS_SAY[r.stars]}<small>${kidsTip(r)}</small></div></div>
+      ${r.story ? `<div class="card story-end"><h3>${esc(r.story.n)}</h3><p class="story-txt">${r.story.outro}</p></div>` : ''}
+      <div class="row" style="margin-top:18px"><button class="btn ghost" data-go="games">К играм</button>${next ? `<button class="btn" id="rNext">Дальше ${ic('chev')}</button>` : `<button class="btn" id="rAgain">${ic('refresh')} Ещё раз</button>`}</div>
+      ${next ? `<button class="btn ghost sm" id="rAgain" style="margin-top:8px">${ic('refresh')} Ещё раз</button>` : ''}<div id="rFb" class="hidden"></div>`;
     return `<div class="result-hero">${badge(r.win === false ? 'refresh' : tut ? 'check' : 'trophy', r.win === false ? 'peach' : 'sun', 'xxl')}
       <h1>${title}</h1><div class="starsrow">${starsSvg(r.stars)}</div>
       <div class="score" data-count="${r.score}">0</div><p class="sub" style="margin:0">очков · ${g.t}${tut ? '' : ' · ' + lvT}${r.record ? ' · <b style="color:var(--ok)">рекорд</b>' : ''}</p></div>
@@ -1226,6 +1262,7 @@ SCR.result = {
         <div><b>+${r.xp}</b><small>XP${r.daily2 ? ' ×2' : ''}</small></div></div>
       <div class="card" style="margin-top:12px">${r.extra.map(([k, v]) => `<div class="kv"><span class="l">${k}</span><b>${v}</b></div>`).join('')}</div>
       ${gameMap(r.tl || [])}
+      ${r.bias ? `<div class="note">${ic('swap')}<span>${esc(r.bias)} — задания подстроены, чтобы подтянуть слабый канал.</span></div>` : ''}
       ${r.endless ? `<div class="note ${r.endless.to >= r.endless.from ? 'ok' : ''}">${ic(r.endless.to >= r.endless.from ? 'bolt' : 'info')}<span>Сложность ${r.endless.from.toFixed(1)} → <b>${r.endless.to.toFixed(1)}</b>. ${r.endless.to > r.endless.from ? 'Следующая игра будет чуть труднее.' : r.endless.to < r.endless.from ? 'Следующая игра будет проще — закрепим навык.' : ''}</span></div>` : ''}
       ${r.weekly ? `<div class="note ${r.weekly.done ? 'ok' : ''}">${ic('calendar')}<span>${r.weekly.just ? '<b>Испытание недели выполнено!</b> +150 XP и деталь для мастерской.' : r.weekly.done ? 'Испытание недели уже выполнено — результат записан в таблицу.' : 'Попытка записана в таблицу испытания недели.'}</span></div>` : ''}
       ${r.story ? `<div class="card story-end"><small class="muted">${r.story.place} пройдена · +100 XP</small><h3>${esc(r.story.n)}</h3><p class="story-txt">${r.story.outro}</p><div class="note life">${ic('hand')}<span><b>Упражнение в жизни.</b> ${r.story.life}</span></div>${r.story.fin ? `<p class="story-txt"><b>Эпилог.</b> ${STORY.epilogue}</p>` : ''}<button class="btn ghost sm" data-go="story" style="margin-top:8px">${ic('robot')} К сюжету</button></div>` : p.story ? `<button class="btn ghost sm" data-go="story" style="margin-top:10px">${ic('robot')} К сюжету</button>` : ''}
@@ -1304,8 +1341,9 @@ SCR.progress = {
       <div class="records">${Object.entries(GAMES).filter(([, g]) => !g.tut).map(([id, g]) => `<div class="rec">${gIcon(id)}<b>${bestScore(id) ? fmtN(bestScore(id)) : '—'}</b><small>${g.t} · ${plur(playsOf(id), 'игра', 'игры', 'игр')}</small><div style="color:#FFB524;font-size:12px;letter-spacing:1px">${'★'.repeat(S.games[id]?.stars || 0)}<span style="color:var(--line)">${'★'.repeat(3 - (S.games[id]?.stars || 0))}</span></div></div>`).join('')}</div>
       <h2>Последние тренировки</h2>
       <div class="card">${recent.length ? recent.map(h => { const g = GAMES[h.game]; return `<div class="hist">${gIcon(h.game)}<div><b>${g.t}</b><small>${new Date(h.t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · ${fmtTime(h.dur)}${h.lv ? ' · ' + lvName(h.lv) : ''}${h.win === false ? ' · не пройден' : h.stars ? ' · ' + '★'.repeat(h.stars) : ''}</small></div><div class="hv">${fmtN(h.score)}<small class="muted">${h.acc}%${h.purity != null ? ' · чист. ' + h.purity + '%' : ''}</small></div></div>`; }).join('') : '<p class="sub">Пока нет тренировок</p>'}</div>
-      <div class="row" style="margin-top:14px;gap:10px;flex-wrap:wrap"><button class="btn ghost" data-go="achievements" style="flex:1">${ic('trophy')} Все достижения</button><button class="btn ghost" id="pReport" style="flex:1">${ic('down')} Отчёт для специалиста</button></div></div>`;
+      <div class="row" style="margin-top:14px;gap:10px;flex-wrap:wrap"><button class="btn ghost" data-go="achievements" style="flex:1">${ic('trophy')} Все достижения</button><button class="btn ghost" id="pReport" style="flex:1">${ic('down')} Отчёт для специалиста</button><button class="btn ghost" id="pLink" style="flex:1">${ic('chart')} Ссылка и QR</button></div></div>`;
     const P = $('#pBody', el);
+    $('#pLink', P).onclick = () => reportLinkSheet(N);
     $('#pReport', P).onclick = () => Native.saveFile(`kineta-report-${dayKey()}.html`, specialistReport(N), 'text/html', 'Отчёт Kineta').then(r => r !== 'cancel' && toast('down', r === 'shared' ? 'Отчёт готов к отправке' : 'Отчёт сохранён', 'Откройте файл и при необходимости распечатайте в PDF')).catch(() => toast('down', 'Не удалось сохранить отчёт'));
     lines($('#cLine', P), days.map(d => lbl(d.d)), [{ name: 'Точность', color: 'var(--primary)', values: days.map(d => d.v?.acc || null) }, { name: 'Чистота', color: 'var(--s3)', values: days.map(d => d.v?.purity || null) }], { min: 0, max: 100, unit: '%', full: days.map(d => d.d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })) });
     $('#cTbl', P).innerHTML = `<table class="tblv"><tr><th>Дата</th><th>Точность</th><th>Чистота</th><th>Мин</th></tr>${days.filter(d => d.v).map(d => `<tr><td>${d.d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</td><td>${d.v.acc || '—'}%</td><td>${d.v.purity || '—'}%</td><td>${d.v.min}</td></tr>`).join('')}</table>`;
@@ -1512,6 +1550,7 @@ SCR.profile = {
       <h2>Настройки</h2><div class="card" style="padding:4px 16px">
         <div class="set" style="display:block"><div class="between"><span>Тема<small>«Системная» следует настройке телефона</small></span></div>${seg('theme', [['light', 'Светлая'], ['dark', 'Тёмная'], ['auto', 'Системная']], c.theme)}</div>
         <div class="set" style="display:block"><div class="between"><span>Цвет руки протеза<small>В приложении и в играх</small></span></div><div class="hpal" id="hPal">${Object.entries(HAND_PALS).map(([k, p]) => `<button data-pal="${k}" class="${(c.handPal || 'titan') === k ? 'on' : ''}"><i style="background:linear-gradient(135deg,${p.skin},${p.shade});border-color:${p.edge}"></i>${p.n}</button>`).join('')}</div></div>
+        ${row('heart', 'Детский режим', 'Крупно, меньше цифр, подсказки робота Кинетика, сеансы до 8 минут', sw('kids', c.kids))}
         ${row('text', 'Крупный режим', 'Крупнее текст и кнопки — удобно детям и при слабом зрении', sw('big', c.big))}
         ${row('shapes', 'Формы каналов', 'К1 — круг, К2 — квадрат: различимо без цвета', sw('shapes', c.shapes))}
         ${row('calib', 'Проверка датчиков перед игрой', '5 секунд: покой, К1, К2 — пороги подстраиваются под сегодняшний сигнал', sw('quickCal', c.quickCal))}
@@ -1522,6 +1561,7 @@ SCR.profile = {
         ${row('vibro', 'Вибрация', 'Тактильный отклик', sw('vibro', c.vibro))}
         ${row('voice', 'Голосовые подсказки', 'Игра говорит, что делать, — можно смотреть на руку, а не на экран', sw('voice', c.voice))}
         <div class="set" style="display:block"><div class="between"><span>Голос<small id="vInfo">${(i => c.voiceSrc === 'rec' && i.rec ? `Записанный, ${i.recN} фраз; новые фразы — голосом телефона` : 'Системный: ' + esc(i.sys))(Native.voiceInfo())}</small></span><button class="lnk" id="vTest">${ic('sound')} Прослушать</button></div>${seg('vsrc', [['rec', 'Записанный'], ['sys', 'Системный']], c.voiceSrc)}</div>
+        ${row('clock', 'Напоминание о тренировке', 'Каждый день в это время, если сегодня ещё не тренировались', `<input type="time" id="remT" value="${c.remindAt}" class="txt" style="width:auto;padding:6px 8px;margin-right:8px">${sw('remindOn', c.remindOn)}`)}
         <div class="set" style="display:block"><div class="between"><span>Цель на день</span><span class="tag soft" id="goalV">${S.profile.goalMin} мин</span></div><input type="range" min="5" max="40" step="5" value="${S.profile.goalMin}" id="goal"></div></div>
       <h2>Отзыв о приложении</h2><div class="card"><div class="presets" id="fbR">${[['Тяжело', 1], ['Нормально', 3], ['Отлично', 5]].map(([e, v]) => `<button data-v="${v}">${e}</button>`).join('')}</div><textarea class="txt" id="fbT" placeholder="Что улучшить? (необязательно)" style="margin-top:10px;min-height:70px"></textarea><button class="btn sm" id="fbS" style="margin-top:10px">Отправить отзыв</button></div>
       <h2>Данные</h2><div class="card" style="padding:4px 16px">
@@ -1536,7 +1576,9 @@ SCR.profile = {
     $$('[data-sw]', el).forEach(b => b.addEventListener('click', e => {
       e.stopPropagation(); const k = b.dataset.sw, c = C();
       if (k === 'theme') { c.theme = c.theme === 'dark' ? 'light' : 'dark'; applyTheme(); }
-      else { c[k] = !c[k]; if (k === 'mirror') applyMirror(); if (k === 'voice') c.voice ? Native.say('Голосовые подсказки включены', { force: true }) : Native.hush(); if (k === 'big') applyBig(); }
+      else { c[k] = !c[k]; if (k === 'mirror') applyMirror(); if (k === 'voice') c.voice ? Native.say('Голосовые подсказки включены', { force: true }) : Native.hush(); if (k === 'big') applyBig();
+        if (k === 'kids') { applyKids(); if (c.kids) { c.big = true; applyBig(); c.sessionMin = Math.min(c.sessionMin, 8); $('[data-sw="big"]', el)?.classList.add('on'); toast('heart', 'Детский режим включён', 'Крупно, короткие сеансы, подсказки Кинетика'); } }
+        if (k === 'remindOn') Reminder.sync(true).then(r => toast('clock', !c.remindOn ? 'Напоминание выключено' : r === 'denied' ? 'Уведомления запрещены' : r === 'none' ? 'Уведомления недоступны в этом браузере' : 'Напоминание в ' + c.remindAt, r === 'denied' ? 'Разрешите уведомления для Kineta в настройках телефона' : r === 'web' ? 'В браузере придёт, пока вкладка открыта; в APK — всегда' : '')); }
       b.classList.toggle('on'); save(); vib(8);
     }));
     bindSeg(el, 'theme', v => { C().theme = v; applyTheme(); save(); vib(8); });
@@ -1546,6 +1588,7 @@ SCR.profile = {
     Native.loadClips().then(vInfo);
     $('#hPal', el).onclick = e => { const b = e.target.closest('[data-pal]'); if (!b) return; C().handPal = b.dataset.pal; applyHand(); save(); $$('#hPal button', el).forEach(x => x.classList.toggle('on', x === b)); Snd.tick(); toast('palette', 'Цвет руки: ' + HAND_PALS[b.dataset.pal].n.toLowerCase()); };
     bindSeg(el, 'hand', v => { const c = C(); c.hand = v; c.mirror = v === 'right'; applyMirror(); save(); const m = $('[data-sw="mirror"]', el); m?.classList.toggle('on', c.mirror); toast('mirror', 'Протез на ' + (v === 'left' ? 'левой' : 'правой') + ' руке', 'Интерфейс — под ' + (c.mirror ? 'левую' : 'правую') + ' здоровую руку'); });
+    $('#remT', el).onchange = e => { if (!/^\d\d:\d\d$/.test(e.target.value)) return; C().remindAt = e.target.value; save(); Reminder.sync().then(() => C().remindOn && toast('clock', 'Напоминание в ' + C().remindAt)); };
     const se = $('#ses', el); rangeFill(se); se.oninput = () => { C().sessionMin = +se.value; rangeFill(se); $('#sesV', el).textContent = se.value + ' мин'; save(); };
     const g = $('#goal', el); rangeFill(g); g.oninput = () => { S.profile.goalMin = +g.value; rangeFill(g); $('#goalV', el).textContent = g.value + ' мин'; save(); };
     let rate = 0; $('#fbR', el).onclick = e => { const b = e.target.closest('button'); if (!b) return; rate = +b.dataset.v; $$('#fbR button', el).forEach(x => x.classList.toggle('on', x === b)); };
@@ -1580,5 +1623,5 @@ function applyTheme() {
 mqDark?.addEventListener?.('change', () => { if (C().theme === 'auto') applyTheme(); });
 /* цвет руки: «Титан» берётся из темы (--hand-* в app.css), остальные палитры — поверх неё */
 function applyHand() { const k = C().handPal || 'titan', p = HAND_PALS[k], st = document.documentElement.style; for (const n of ['skin', 'shade', 'edge', 'cuff']) { if (k === 'titan' || !p) st.removeProperty('--hand-' + n); else st.setProperty('--hand-' + n, p[n]); } }
-function applyBig() { document.body.classList.toggle('big', !!C().big); }
+function applyBig() { document.body.classList.toggle('big', !!C().big); applyKids(); }
 function applyMirror() { document.body.classList.toggle('mirror', C().mirror); $('#phone').classList.toggle('mirror', C().mirror); document.body.classList.toggle('mirror-pads', C().mirror); }

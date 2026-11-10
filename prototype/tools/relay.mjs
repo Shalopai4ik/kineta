@@ -7,10 +7,13 @@
 //   Поток 2: {"timestamp_ms":…, "dist":{"neutral":…, …, "abduction":…}}
 // Общая таблица клуба (испытание недели): POST /board {id, name, week, game, lv, score, acc, purity},
 // GET /board?week=YYYY-MM-DD → {week, rows}. Хранится в tools/board.json, лучший результат игрока за неделю.
+// Отчёт для специалиста по ссылке: POST /report (HTML отчёта) → {id}, GET /r/<id> — открыть (QR в приложении).
+// Хранится в tools/reports/, 30 дней, не больше 300 отчётов; отдаётся без скриптов (CSP sandbox).
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const port = +process.argv[2] || 8787;
@@ -19,6 +22,11 @@ const page = path.resolve(here, '../emulator.html');
 const clients = new Set();
 let pkts = 0;
 const BOARD_FILE = path.resolve(here, 'board.json');
+const REP_DIR = path.resolve(here, 'reports'); fs.mkdirSync(REP_DIR, { recursive: true });
+function pruneReports() {
+  const now = Date.now(), list = fs.readdirSync(REP_DIR).filter(f => /^[a-f0-9]{16}\.html$/.test(f)).map(f => ({ f, t: fs.statSync(path.join(REP_DIR, f)).mtimeMs })).sort((a, b) => b.t - a.t);
+  list.forEach((x, i) => { if (i >= 300 || now - x.t > 30 * 864e5) fs.rmSync(path.join(REP_DIR, x.f), { force: true }); });
+}
 let board = {}; try { board = JSON.parse(fs.readFileSync(BOARD_FILE, 'utf8')) || {}; } catch (e) { board = {}; }
 let saveT = 0; const saveBoard = () => { clearTimeout(saveT); saveT = setTimeout(() => fs.writeFile(BOARD_FILE, JSON.stringify(board), () => { }), 500); };
 /* строгая проверка записи: чужой клиент в сети не должен испортить таблицу */
@@ -53,6 +61,23 @@ http.createServer((q, r) => {
     });
     return;
   }
+  if (url === '/report' && q.method === 'POST') {
+    const parts = []; let len = 0;
+    q.on('data', d => { parts.push(d); len += d.length; if (len > 600000) q.destroy(); });
+    q.on('end', () => {
+      const html = Buffer.concat(parts).toString('utf8');
+      if (!/^<!doctype html>/i.test(html) || !html.includes('Kineta')) { r.writeHead(422, cors); return r.end('not a report'); }
+      const id = crypto.randomBytes(8).toString('hex'); fs.writeFileSync(path.join(REP_DIR, id + '.html'), html); pruneReports();
+      r.writeHead(200, { ...cors, 'content-type': 'application/json' }); r.end(JSON.stringify({ id, path: '/r/' + id }));
+    });
+    return;
+  }
+  { const m = url.match(/^\/r\/([a-f0-9]{16})$/); if (m) {
+    const f = path.join(REP_DIR, m[1] + '.html');
+    if (!fs.existsSync(f)) { r.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); return r.end('Отчёт не найден или устарел (хранится 30 дней)'); }
+    r.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox", 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' });
+    return fs.createReadStream(f).pipe(r);
+  } }
   if (url === '/board' && q.method === 'POST') {
     const parts = []; let len = 0; // куски собираем как байты: многобайтовая кириллица не рвётся на границе куска
     q.on('data', d => { parts.push(d); len += d.length; if (len > 4000) q.destroy(); });

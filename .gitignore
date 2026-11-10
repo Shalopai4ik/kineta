@@ -28,3 +28,4 @@ Thumbs.db
 .vscode/
 prototype/tools/board.json
 !docs/media/*.mp4
+prototype/tools/reports/

@@ -231,3 +231,28 @@ const Club = {
   send(week, game, lv, r) { if (!this.url()) return; this.req('/board', { id: this.id(), name: S.profile.name, week, game, lv, score: r.score, acc: Math.round(r.acc * 100), purity: r.purity == null ? null : Math.round(r.purity * 100) }).catch(e => console.warn('[Club]', e.message)); },
   list: week => Club.req('/board?week=' + encodeURIComponent(week))
 };
+
+/* ---------------- Идея 6: отчёт для специалиста по ссылке и QR-коду ----------------
+   Отчёт (тот же самодостаточный HTML, что «Отчёт для специалиста») кладётся на сервер клуба (tools/relay.mjs
+   в локальной сети центра реабилитации); специалист сканирует QR телефоном и открывает его без пересылки файлов. */
+Club.report = async function (html) {
+  const u = this.url(); if (!/^https?:\/\//.test(u)) throw new Error('адрес клуба не задан');
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+  try { const r = await fetch(u + '/report', { method: 'POST', headers: { 'content-type': 'text/html; charset=utf-8' }, body: html, signal: ctl.signal }); if (!r.ok) throw new Error('сервер ответил ' + r.status); const j = await r.json(); return u + j.path; }
+  finally { clearTimeout(t); }
+};
+const qrSvg = (text, cell = 5) => { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag(cell, 2, 'QR-код ссылки на отчёт'); };
+function reportLinkSheet(N = 30) {
+  sheet(`<div class="sh-head">${badge('chart', 'sky', 'lg')}<div><h2 style="margin:0">Отчёт по ссылке</h2><small class="muted">для специалиста по реабилитации · ${N} дн.</small></div></div>
+    <div id="rlBody"><p class="sub">${Club.url() ? 'Отправляю отчёт на сервер клуба…' : 'Ссылка работает через сервер клуба: на компьютере в той же сети (например, в центре реабилитации) — <b>node tools/relay.mjs</b>, адрес — сюда. Без сервера отчёт можно сохранить файлом.'}</p></div>
+    <div class="row" style="margin-top:8px"><input class="txt" id="rlU" inputmode="url" placeholder="http://192.168.1.5:8787" value="${esc(C().club || '')}" style="flex:1;min-width:0"><button class="btn ghost sm" id="rlS" style="width:auto;flex:none">Сохранить</button></div>`, (sh) => {
+    const box = $('#rlBody', sh);
+    const go = () => { if (!Club.url()) return; box.innerHTML = '<p class="sub">Отправляю отчёт…</p>';
+      Club.report(specialistReport(N)).then(link => { if (!sh.isConnected) return;
+        box.innerHTML = `<div class="qrbox">${qrSvg(link)}</div><p class="sub small" style="text-align:center;word-break:break-all;margin:8px 0 0"><a href="${esc(link)}" target="_blank" rel="noopener">${esc(link)}</a></p><div class="note">${ic('info')}<span>Специалист наводит камеру телефона на код — отчёт открывается в браузере. Ссылка работает в сети клуба 30 дней.</span></div><button class="btn ghost sm" id="rlC" style="margin-top:10px">${ic('check')} Скопировать ссылку</button>`;
+        $('#rlC', box).onclick = () => navigator.clipboard?.writeText(link).then(() => toast('check', 'Ссылка скопирована')).catch(() => toast('info', 'Скопируйте ссылку вручную'));
+      }).catch(e => { if (sh.isConnected) box.innerHTML = `<p class="sub small" style="color:var(--warn)">Не удалось отправить: ${esc(e.message)}. Проверьте, что сервер клуба запущен и телефон в той же сети.</p>`; }); };
+    $('#rlS', sh).onclick = () => { const u = $('#rlU', sh).value.trim().replace(/\/$/, ''); if (u && !/^https?:\/\//.test(u)) return toast('info', 'Нужен адрес вида http://192.168.1.5:8787'); C().club = u; save(); go(); };
+    go();
+  });
+}

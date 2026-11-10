@@ -90,3 +90,19 @@ test('Сохранение старой версии с демо-историе�
   const k = loadCore({ storage: { 'kineta.app.v2': JSON.stringify(old) } });
   assert.equal(k.run('S.demo'), true);
 });
+
+test('напоминание (идея 4): плагин локальных уведомлений — одно уведомление на ближайший раз, отмена, запрет', async () => {
+  const log = []; let perm = 'prompt';
+  const LocalNotifications = {
+    cancel: async a => log.push(['cancel', a.notifications[0].id]),
+    checkPermissions: async () => ({ display: perm }),
+    requestPermissions: async () => { log.push(['ask']); perm = 'granted'; return { display: perm }; },
+    schedule: async a => log.push(['schedule', a.notifications[0].id, a.notifications[0].schedule.at.getHours(), a.notifications[0].body])
+  };
+  const k = loadCore({ capacitor: { isNativePlatform: () => true, Plugins: { LocalNotifications } } });
+  const at = new Date(2026, 10, 11, 19, 0);
+  assert.equal(await k.run(`Native.remind(new Date(${at.getTime()}), 'Kineta', 'Миссия дня', false)`), 'denied', 'без запроса разрешения — молча не ставим');
+  assert.equal(await k.run(`Native.remind(new Date(${at.getTime()}), 'Kineta', 'Миссия дня', true)`), 'native');
+  assert.deepEqual(log.filter(x => x[0] !== 'cancel').map(x => x.join('|')), ['ask', 'schedule|1001|19|Миссия дня']);
+  assert.equal(await k.run('Native.remind(null)'), 'off'); assert.deepEqual(log.at(-1), ['cancel', 1001]);
+});

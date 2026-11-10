@@ -48,4 +48,6 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- напоминание о тренировке (@capacitor/local-notifications) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

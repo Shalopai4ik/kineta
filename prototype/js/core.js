@@ -21,7 +21,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const easeOut = t => 1 - Math.pow(1 - t, 3);
 /* квантиль выборки (0.5 — медиана, 0.9 — 90-й перцентиль); пустая выборка — 0 */
 const quantile = (a, q) => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * q))]; };
-const APP_VERSION = '3.5.1';
+const APP_VERSION = '3.6.0';
 
 /* ---------------- Шина событий ---------------- */
 const Bus = {
@@ -73,7 +73,7 @@ const DEF = {
     sound: true, vibro: true, voice: false, voiceSrc: 'rec', mirror: false, theme: 'light', // voiceSrc: 'rec' — записанный голос, 'sys' — синтезатор телефона
     // theme: 'light' | 'dark' | 'auto' (как в системе); handPal — цвет руки протеза; big — крупный режим;
     // shapes — формы каналов (К1 круг, К2 квадрат) для различения без цвета; quickCal — проверка датчиков перед игрой
-    handPal: 'titan', big: false, shapes: true, quickCal: true, club: '', // club — адрес общей таблицы клуба (tools/relay.mjs в локальной сети)
+    handPal: 'titan', big: false, shapes: true, quickCal: true, club: '', mus: 'wrist', musN: ['', ''], remindOn: false, remindAt: '19:00', kids: false, // mus — где стоят датчики (подписи мышц): wrist | arm | custom // club — адрес общей таблицы клуба (tools/relay.mjs в локальной сети)
     ble: { namePrefix: '', service: '', emgChar: '', cmdChar: '', format: 'u16le2', fullScale: 4095 },
     emu: { noise: .03, crosstalk: .06, rise: 1.8, fall: 3.0, jMin: 10, jMax: 110, loss: .05, burst: .01, misclass: .04 }
   },
@@ -98,7 +98,8 @@ function sanitize() {
   const c = S.cfg;
   c.mode = oneOf(c.mode, ['emg', 'spppr'], 'emg'); c.theme = oneOf(c.theme, ['light', 'dark', 'auto'], 'light');
   c.coMode = oneOf(c.coMode, ['both', 'classic', 'sport', 'lock'], 'both'); c.thrSrc = oneOf(c.thrSrc, ['game', 'device'], 'game');
-  c.hand = oneOf(c.hand, ['left', 'right'], 'left'); c.spGest = oneOf(c.spGest, [2, 6], 6); c.voiceSrc = oneOf(c.voiceSrc, ['rec', 'sys'], 'rec');
+  c.hand = oneOf(c.hand, ['left', 'right'], 'left'); c.spGest = oneOf(c.spGest, [2, 6], 6); c.voiceSrc = oneOf(c.voiceSrc, ['rec', 'sys'], 'rec'); c.mus = oneOf(c.mus, ['wrist', 'arm', 'custom'], 'wrist'); if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(c.remindAt)) c.remindAt = '19:00';
+  c.musN = (Array.isArray(c.musN) && c.musN.length === 2 ? c.musN : ['', '']).map(x => typeof x === 'string' ? x.replace(/[<>]/g, '').trim().slice(0, 20) : '');
   if (!Object.hasOwn(HAND_PALS, c.handPal)) c.handPal = 'titan';
   c.thr1 = clamp(c.thr1, .08, .95); c.thr2 = clamp(c.thr2, .08, .95); c.gain1 = clamp(Math.round(c.gain1), 1, 20); c.gain2 = clamp(Math.round(c.gain2), 1, 20);
   c.hyst = clamp(c.hyst, .3, 1); c.deadzone = clamp(c.deadzone, 0, .5); c.smoothing = clamp(c.smoothing, 0, .95); c.slew = clamp(c.slew, .01, 1);
@@ -180,6 +181,15 @@ function save(now = false) {
   now ? w() : saveT = setTimeout(w, 250);
 }
 const C = () => S.cfg;
+/* Идея 3 — подписи мышц под пользователя (митап 27): датчики стоят на тех мышцах, что лучше работают.
+   В текстах игры «сгибатели / разгибатели» заменяются на выбранные названия; html=true — с экранированием. */
+const MUS_P = { wrist: ['сгибатели', 'разгибатели'], arm: ['бицепс', 'трицепс'] };
+function musNames() { const c = C(); return c.mus === 'custom' ? [c.musN?.[0] || 'мышца К1', c.musN?.[1] || 'мышца К2'] : MUS_P[c.mus] || MUS_P.wrist; }
+function musText(s, html = false) {
+  if (!S?.cfg || !C().mus || C().mus === 'wrist' || typeof s !== 'string') return s;
+  const [a, b] = musNames().map(x => html ? esc(x) : x), up = x => x.charAt(0).toUpperCase() + x.slice(1);
+  return s.replace(/разгибатели/g, b).replace(/Разгибатели/g, up(b)).replace(/сгибатели/g, a).replace(/Сгибатели/g, up(a));
+}
 const G = id => S.gestures.find(g => g.id === id);
 
 /* Демо-история за 5 недель для показа дашбордов (?demo=1). Записи помечены seed: true,
