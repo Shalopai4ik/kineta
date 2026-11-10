@@ -151,7 +151,7 @@ class RaceGame {
     this.SEG = 200; this.ROAD = 1150; this.camH = 1000; this.camD = .84; this.draw_ = 130;
     this.goal = LV(lv, [2200, 3200, 4200]); this.total = 0;
     this.pos = 0; this.speed = 0; this.max = 7800 + lv * 1300; this.px = 0; this.nitro = 1; this.boost = false; this.finished = false;
-    this.offT = 0; this.crash = 0; this.shake = 0; this.crystals = 0; this.hits = 0; this.sky = 0; this.cleanDist = 0; this.clean1k = false; this.dist = 0;
+    this.offT = 0; this.crash = 0; this.shake = 0; this.crystals = 0; this.hits = 0; this.sky = 0; this.cleanDist = 0; this.clean1k = false; this.dist = 0; this.actT = 0;
     // призрак: лучший финиш этого уровня — дистанция и положение на дороге каждые 0.25 с
     this.gKey = Number.isInteger(lv) && lv <= 3 ? String(lv) : 'endless';
     this.ghost = S.games?.race?.ghost?.[this.gKey] || null; this.trk = { d: [], x: [] }; this.trkT = 0;
@@ -191,6 +191,7 @@ class RaceGame {
     const target = this.max * (this.boost ? 1.3 : 1) * (Math.abs(this.px) > 1 ? .45 : 1);
     this.speed += (target - this.speed) * dt * (this.speed < target ? .6 : 2.5);
     const steer = c.state === 'BOTH' ? 0 : (c.a[1] - c.a[0]); // К1 (закрытие) — влево, К2 (открытие) — вправо
+    if (c.state !== 'REST') this.actT += dt; // время активного управления: машина едет сама, без руления уровень не засчитывается
     this.px += steer * dt * 2.6 * Math.max(.35, pct);
     this.px -= dt * 2 * pct * pct * seg.curve * .16; // центробежная сила
     this.px = clamp(this.px, -1.8, 1.8);
@@ -280,14 +281,15 @@ class RaceGame {
     else if (o.t === 'lamp') { const h = s * .9; ctx.fillStyle = '#6B5A55'; rr(ctx, x - s * .02, y - h, s * .04, h, s * .02); ctx.fill(); glow(ctx, x, y - h, s * .35, '#FFD58A', .55); ball(ctx, x, y - h, Math.max(1.5, s * .06), '#FFD27A'); }
   }
   result() {
-    const acc = clamp(1 - this.offT / Math.max(1, this.T) - this.hits * .05) * (this.finished ? 1 : .85);
+    // точность — удержание трассы, но только при реальном рулении: до 8 с активного управления она пропорционально снижается
+    const acc = clamp(1 - this.offT / Math.max(1, this.T) - this.hits * .05) * (this.finished ? 1 : .85) * (.3 + .7 * clamp(this.actT / 8));
     let ghostRow = null;
     if (this.finished) {
       const st = S.games.race ||= { best: 0, plays: 0, stars: 0 }, gs = st.ghost ||= {}, old = gs[this.gKey];
       if (!old || this.finAt < old.T) { gs[this.gKey] = { T: +this.finAt.toFixed(2), d: this.trk.d, x: this.trk.x, at: Date.now() }; ghostRow = ['Призрак', old ? `новый: быстрее на ${(old.T - this.finAt).toFixed(1)} с` : 'записан — обгони его в следующий раз']; }
       else ghostRow = ['Призрак', `медленнее на ${(this.finAt - old.T).toFixed(1)} с`];
     } else if (this.ghost) ghostRow = ['Призрак', 'финишировал раньше'];
-    return { score: this.score, acc, win: this.finished, extra: [...(ghostRow ? [ghostRow] : []), ['Дистанция', `${Math.round(Math.min(this.dist, this.goal))} / ${this.goal} м`], ['Финиш', this.finished ? fmtTime(this.T) : 'не успел'], ['Кристаллы', this.crystals], ['Аварии', this.hits], ['На обочине', this.offT.toFixed(1) + ' с']] };
+    return { score: this.score, acc, win: this.finished, extra: [...(ghostRow ? [ghostRow] : []), ['Дистанция', `${Math.round(Math.min(this.dist, this.goal))} / ${this.goal} м`], ['Финиш', this.finished ? fmtTime(this.T) : 'не успел'], ['Кристаллы', this.crystals], ['Аварии', this.hits], ['На обочине', this.offT.toFixed(1) + ' с'], ['Руление', Math.round(this.actT) + ' с']] };
   }
 }
 function carRear(ctx, x, y, w, col, tilt = 0, me = false, boost = false) {
@@ -697,7 +699,7 @@ const MUG_POSE = (f) => [lerp(0, 58, f), lerp(0, 72, f), lerp(0, 74, f), lerp(0,
 class MugGame {
   constructor(lv) {
     this.diff = lv; this.T = 0; this.dur = LV(lv, [100, 110, 120]); this.done = false; this.fx = new FX(); this.ban = new Banner();
-    this.goalN = LV(lv, [4, 5, 6]); this.ok = 0; this.tries = 0; this.fails = { crack: 0, drop: 0, spill: 0, knock: 0, slow: 0 };
+    this.goalN = LV(lv, [4, 5, 6]); this.ok = 0; this.tries = 0; this.fails = { crack: 0, drop: 0, spill: 0, knock: 0, slow: 0, swap: 0 };
     this.inT = 0; this.carryT = 0; this.sc = 0; this.endT = 0; this.f = .6; this.wave = 0; this.leak = false;
     this.speed = LV(lv, [.55, .7, .85]); this.width = LV(lv, [.26, .2, .16]);
     this.newCup();
@@ -710,6 +712,8 @@ class MugGame {
     this.tries++;
   }
   resize(W, H) { this.W = W; this.H = H; }
+  /* порог поломки: на 0.1 выше зелёной зоны, но достижимый (у тяжёлой банки зона высоко — иначе её нельзя было бы пережать) */
+  brk() { return Math.min(.97, this.hi + .1); }
   progress() { return clamp(this.ok / this.goalN); }
   hud() { return fmtTime(this.dur - this.T); }
   chips() { return [['Донесено', `${this.ok}/${this.goalN}`], ['Хват', Math.round(this.f * 100) + '%', this.f >= this.lo && this.f <= this.hi ? '#3DB37A' : null], ['Пролито', Math.round(this.spill * 100) + '%', this.spill > .5 ? '#EE5D5D' : null]]; }
@@ -717,6 +721,7 @@ class MugGame {
     if (this.endT) return ['Все кружки на месте!', 'ok'];
     if (this.ph === 'reach') return this.f > .2 ? ['Раскрой кисть (К2), пока рука подходит', 'act'] : ['Кисть раскрыта — жди кружку', 'ok'];
     if (this.ph === 'grip') return this.f < this.lo ? ['Сожми (К1) до зелёной зоны', 'act'] : this.f > this.hi ? ['Слишком сильно! Чуть раскрой (К2)', 'warn'] : ['Теперь расслабь руку — протез держит хват', 'ok'];
+    if ((this.ph === 'grip' || this.ph === 'carry' || this.ph === 'release') && Ctrl.state === 'BOTH') return ['Обе мышцы — это смена хвата: кружка выпадет!', 'warn'];
     if (this.ph === 'carry') { if (this.leak) return ['Одна мышца за раз — от встречного сигнала чай плещется', 'warn']; if (this.f < this.lo) return ['Выскальзывает — дожми К1', 'warn']; if (this.f > this.hi) return ['Давишь слишком сильно — ослабь К2', 'warn']; return this.refill && this.refillT < 1.5 ? ['Долили — кружка тяжелее, дожми чуть-чуть', 'act'] : ['Неси спокойно, рука расслаблена', 'ok']; }
     if (this.ph === 'release') return ['Поставь: раскрой кисть (К2)', 'act'];
     return '';
@@ -731,7 +736,7 @@ class MugGame {
     const x = this.cupX(), y = this.cupY();
     if (kind === 'spill' || kind === 'knock') this.fx.burst(x, y - 10, ['#C98A5A', '#E3B58C', '#fff'], 22, 220);
     if (kind === 'crack') { this.crack = 1; this.fx.burst(x, y, ['#fff', this.cup.c], 18, 260); }
-    if (kind === 'drop') this.fallen = .01;
+    if (kind === 'drop' || kind === 'swap') this.fallen = .01;
   }
   win() {
     this.ok++; this.ph = 'placed'; this.pt = 0; Mission.ev('mug:deliver');
@@ -751,11 +756,15 @@ class MugGame {
     this.f = clamp(this.f); this.df = (this.f - f0) / Math.max(dt, 1e-3);
     this.leak = a0 > C().thr1 * .5 && a1 > C().thr2 * .5;
     const inWin = this.f >= this.lo && this.f <= this.hi;
+    // Q&A 11: «обе мышцы» дольше времени смены жеста переключают хват протеза — предмет выпадает из руки
+    const holding = this.ph === 'grip' || this.ph === 'carry' || this.ph === 'release';
+    this.swT = holding && c.state === 'BOTH' ? (this.swT || 0) + dt : 0;
+    if (this.swT * 1000 >= C().switchMs) { this.swT = 0; return this.fail('swap', 'Смена хвата — кружка выпала'); }
     if (this.ph === 'reach') {
       const T = LV(this.diff, [2.8, 2.3, 1.9]); this.cx = clamp(this.pt / T);
       if (this.pt >= T) { if (this.f <= .22) { this.ph = 'grip'; this.pt = 0; Snd.tick(); } else this.fail('knock', 'Кисть не раскрыта — кружка опрокинута'); }
     } else if (this.ph === 'grip') {
-      if (this.f > this.hi + .1) return this.fail('crack', this.cup.brk);
+      if (this.f > this.brk()) return this.fail('crack', this.cup.brk);
       this.restT = inWin && c.state === 'REST' ? this.restT + dt : 0;
       if (this.restT >= .35) { this.ph = 'carry'; this.carried = true; this.pt = 0; this.cupIn = 0; this.cupCarry = 0; Snd.ok(); }
       else if (this.pt > 7) this.fail('slow', 'Кружку так и не взяли');
@@ -768,12 +777,12 @@ class MugGame {
       if (Math.abs(this.df) > .5) this.spill += dt * .35; // резкие рывки хвата тоже расплёскивают
       const grace = this.refill && this.refillT < 1.6 ? 1.6 : 0; // после доливки есть время дожать
       this.slipT = this.f < this.lo ? this.slipT + dt : 0; this.crushT = this.f > this.hi ? this.crushT + dt : 0;
-      if (this.f > this.hi + .1 || this.crushT > .5) return this.fail('crack', this.cup.brk);
+      if (this.f > this.brk() || this.crushT > .5) return this.fail('crack', this.cup.brk);
       if (this.slipT > .45 + grace) return this.fail('drop', 'Выскользнула!');
       if (this.spill >= 1) return this.fail('spill', 'Пролил…');
       if (this.pt >= T) { this.ph = 'release'; this.pt = 0; }
     } else if (this.ph === 'release') {
-      if (this.f > this.hi + .1) return this.fail('crack', this.cup.brk);
+      if (this.f > this.brk()) return this.fail('crack', this.cup.brk);
       if (this.f <= .12) this.win();
       else if (this.pt > LV(this.diff, [3.5, 3, 2.6])) this.fail('slow', 'Не успел поставить');
     } else if (this.ph === 'placed' || this.ph === 'fail') {
@@ -838,7 +847,7 @@ class MugGame {
     ctx.save(); ctx.shadowColor = 'rgba(60,40,30,.18)'; ctx.shadowBlur = 12; rr(ctx, mx, my, mw, mh, mw / 2); ctx.fillStyle = 'rgba(255,250,244,.92)'; ctx.fill(); ctx.restore();
     const ix = mx + 7, iw = mw - 14, iy = my + 26, ih = mh - 52, Y = v => iy + ih * (1 - v);
     rr(ctx, ix, iy, iw, ih, iw / 2); ctx.fillStyle = '#EDE2D6'; ctx.fill();
-    const brk = Math.min(1, this.hi + .1);
+    const brk = this.brk();
     ctx.fillStyle = 'rgba(238,93,93,.28)'; ctx.fillRect(ix + 2, Y(1), iw - 4, Y(brk) - Y(1));
     rr(ctx, ix + 2, Y(this.hi), iw - 4, Y(this.lo) - Y(this.hi), 6); ctx.fillStyle = 'rgba(127,211,168,.75)'; ctx.fill();
     const fc = this.f > this.hi ? '#EE5D5D' : this.f >= this.lo ? '#3DB37A' : '#F27D45';
@@ -849,7 +858,7 @@ class MugGame {
     const fin = this.tries - (this.ph === 'reach' || this.ph === 'grip' ? 1 : 0) || 1;
     const acc = clamp((this.ok / Math.max(1, fin)) * .6 + (this.carryT ? this.inT / this.carryT : 0) * .4);
     const f = this.fails;
-    return { score: this.score, acc: clamp(acc * (this.ok >= this.goalN ? 1 : .85)), win: this.ok >= this.goalN, extra: [['Донесено', `${this.ok} / ${this.goalN}`], ['В зелёной зоне', this.carryT ? Math.round(this.inT / this.carryT * 100) + '%' : '—'], ['Слишком сильно (треснула)', f.crack], ['Слишком слабо (выскользнула)', f.drop], ['Пролито (встречный сигнал)', f.spill], ['Не раскрыл / не успел', f.knock + f.slow]] };
+    return { score: this.score, acc: clamp(acc * (this.ok >= this.goalN ? 1 : .85)), win: this.ok >= this.goalN, extra: [['Донесено', `${this.ok} / ${this.goalN}`], ['В зелёной зоне', this.carryT ? Math.round(this.inT / this.carryT * 100) + '%' : '—'], ['Слишком сильно (треснула)', f.crack], ['Слишком слабо (выскользнула)', f.drop], ['Пролито (встречный сигнал)', f.spill], ...(f.swap ? [['Смена хвата с кружкой', f.swap]] : []), ['Не раскрыл / не успел', f.knock + f.slow]] };
   }
 }
 function cupSprite(ctx, x, y, s, cup, fill, tilt = 0, squeeze = 0, crack = 0, t = 0) {
@@ -902,7 +911,9 @@ class BlindGame {
     this.diff = lv; this.T = 0; this.done = false; this.fx = new FX(); this.ban = new Banner(); this.endT = 0;
     this.N = LV(lv, [10, 14, 18]); this.hold = LV(lv, [.6, .9, 1.2]); this.lim = LV(lv, [2.2, 1.8, 1.5]);
     this.show = lv < 2 ? 'text' : lv < 3 ? 'dot' : 'none';
-    const set = ['CH1', 'CH2', 'REST'].concat(Ctrl.bothOK() && lv >= 2 ? ['BOTH'] : []); this.cmds = [];
+    // СПППР на 6 жестах (Q&A 22): с уровня 2 добавляются супинация, приведение и отведение — устойчивый жест Ctrl.g
+    const six = C().mode === 'spppr' && C().spGest === 6;
+    const set = ['CH1', 'CH2', 'REST'].concat(Ctrl.bothOK() && lv >= 2 ? ['BOTH'] : [], six && lv >= 2 ? ['G:supination', 'G:adduction', 'G:abduction'] : []); this.cmds = [];
     let prev = 'REST'; for (let i = 0; i < this.N; i++) { const opts = set.filter(x => x !== prev && !(x === 'REST' && i === 0)); prev = pick(opts); this.cmds.push(prev); }
     this.i = 0; this.ph = 'gap'; this.pt = 0; this.gap = 1.4; this.ok = 0; this.miss = 0; this.wrong = 0; this.rts = []; this.holdT = 0; this.sc = 0; this.flash = null;
   }
@@ -910,11 +921,14 @@ class BlindGame {
   progress() { return clamp(this.i / this.N); }
   hud() { return `${Math.min(this.i + 1, this.N)} / ${this.N}`; }
   chips() { return [['Команда', `${Math.min(this.i + 1, this.N)} из ${this.N}`], ['Верно', this.ok, '#3DB37A'], ['Не тем каналом', this.wrong, this.wrong ? '#F2A33A' : null]]; }
-  word(c) { const sp = C().mode === 'spppr'; return { CH1: sp ? 'Согни' : 'Сожми', CH2: sp ? 'Разогни' : 'Раскрой', REST: 'Расслабь', BOTH: sp ? 'Пронация' : 'Обе мышцы' }[c]; }
+  word(c) { const sp = C().mode === 'spppr'; return { CH1: sp ? 'Согни' : 'Сожми', CH2: sp ? 'Разогни' : 'Раскрой', REST: 'Расслабь', BOTH: sp ? 'Пронация' : 'Обе мышцы', 'G:supination': 'Ладонь вверх', 'G:adduction': 'Приведи', 'G:abduction': 'Отведи' }[c]; }
+  /* текущее «состояние» для сравнения с командой: доп. жесты СПППР берутся из устойчивого жеста */
+  cur(c) { const g = Ctrl.g; return C().mode === 'spppr' && ['supination', 'adduction', 'abduction'].includes(g) ? 'G:' + g : c.state; }
+  col(c) { return ST[c]?.hex || '#E995B6'; }
   hint() { if (this.endT) return ['Готово!', 'ok']; if (this.ph !== 'cue') return 'Слушай команду'; return this.show === 'text' ? [this.word(this.cue), 'act'] : 'Слушай и смотри на руку'; }
   cueSound(c) {
     if (c === 'CH1') Snd.tone(330, .22, 'sine', .07); else if (c === 'CH2') Snd.tone(880, .22, 'sine', .06);
-    else if (c === 'BOTH') { Snd.tone(330, .2, 'sine', .05); Snd.tone(880, .2, 'sine', .05); } else Snd.tone(520, .3, 'triangle', .04);
+    else if (c === 'BOTH') { Snd.tone(330, .2, 'sine', .05); Snd.tone(880, .2, 'sine', .05); } else if (c.startsWith('G:')) { Snd.tone(660, .12, 'triangle', .05); Snd.tone(990, .14, 'triangle', .04, .12); } else Snd.tone(520, .3, 'triangle', .04);
     Native.say(this.word(c), { force: true, rate: 1.1 });
   }
   onState(e) { if (this.ph === 'cue' && e.state !== this.cue && e.state !== 'REST' && e.state !== this.prevCue && !this.wrongNow) { this.wrong++; this.wrongNow = true; } }
@@ -923,7 +937,7 @@ class BlindGame {
     if (this.endT) { this.endT -= dt; if (this.endT <= 0) this.done = true; return; }
     this.pt += dt;
     if (this.ph === 'gap') { if (this.pt >= this.gap) { this.prevCue = this.cue; this.cue = this.cmds[this.i]; this.ph = 'cue'; this.pt = 0; this.holdT = 0; this.rt = null; this.wrongNow = false; this.cueSound(this.cue); } return; }
-    if (c.state === this.cue) { if (this.rt == null) this.rt = this.pt; this.holdT += dt; } else this.holdT = Math.max(0, this.holdT - dt * 2);
+    if (this.cur(c) === this.cue) { if (this.rt == null) this.rt = this.pt; this.holdT += dt; } else this.holdT = Math.max(0, this.holdT - dt * 2);
     if (this.holdT >= this.hold) {
       this.ok++; this.rts.push(this.rt); Mission.ev('blind:ok'); this.sc += Math.round(100 + Math.max(0, this.lim - this.rt) * 120 * this.diff); Snd.ok(); this.flash = { ok: true, life: .5 };
       this.next(); return;
@@ -938,7 +952,7 @@ class BlindGame {
     txt(ctx, `${Math.min(this.i + 1, this.N)} / ${this.N}`, cx, 26, 13, 'rgba(255,255,255,.28)', 800);
     if (this.flash && this.flash.life > 0) glow(ctx, cx, cy, Math.max(W, H) * .6, this.flash.ok ? '#3DB37A' : '#EE5D5D', .25 * this.flash.life);
     if (this.ph === 'cue') {
-      const col = ST[this.cue].hex, k = clamp(this.holdT / this.hold);
+      const col = this.col(this.cue), k = clamp(this.holdT / this.hold);
       if (this.show === 'text') { txt(ctx, this.word(this.cue).toUpperCase(), cx, cy, Math.min(42, W * .1), rgba(col, .85)); chMark(ctx, { CH1: 0, CH2: 1, BOTH: 2 }[this.cue] ?? -1, cx, cy + 46, 9, rgba(col, .85)); }
       if (this.show !== 'none') { ctx.strokeStyle = rgba(col, .5); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy + (this.show === 'text' ? 110 : 0), 26, -Math.PI / 2, -Math.PI / 2 + 6.283 * k); ctx.stroke(); }
     } else if (this.show !== 'none' || this.i === 0) txt(ctx, this.i === 0 ? 'Положи телефон и смотри на руку' : '…', cx, cy, 15, 'rgba(255,255,255,.35)', 800);
@@ -1173,7 +1187,7 @@ const GAMES = {
   fish: { cls: FishGame, tone: 'mint', t: 'Рыбалка', d: 'Расслабься, подсеки и веди рыбку: К1 подтягивает, К2 отпускает', skill: 'Контроль силы и покой', tile: 't-mint', ic: 'fish',
     goal: lv => `Поймать ${LV(lv, [3, 4, 5])} рыбы`, ctl: [['Покой', 'ждём поклёвку — не шевелись', '#C8BAAE'], ['К1 рывок', 'подсечка, когда клюёт', '#F27D45'], ['Сила К1', 'подтянуть — зона вверх', '#F27D45'], ['Сила К2', 'отпустить — зона вниз', '#3E9FD6']] },
   mug: { cls: MugGame, tone: 'rose', t: 'Горячая кружка', d: 'Возьми, донеси и поставь кружку: не раздави, не урони, не пролей', skill: 'Дозирование хвата', tile: 't-rose', ic: 'cup',
-    goal: lv => `Донести ${LV(lv, [4, 5, 6])} кружки до подставки`, ctl: [['К2', 'раскрыть кисть перед кружкой и чтобы поставить', '#3E9FD6'], ['К1', 'сжать до зелёной зоны хвата', '#F27D45'], ['Покой', 'протез держит хват — неси спокойно', '#C8BAAE'], ['Обе', 'нельзя: чай расплёскивается', '#EE5D5D']] },
+    goal: lv => `Донести ${LV(lv, [4, 5, 6])} кружки до подставки`, ctl: [['К2', 'раскрыть кисть перед кружкой и чтобы поставить', '#3E9FD6'], ['К1', 'сжать до зелёной зоны хвата', '#F27D45'], ['Покой', 'протез держит хват — неси спокойно', '#C8BAAE'], ['Обе', 'нельзя: чай расплёскивается, а долгое «обе» меняет хват — кружка выпадет', '#EE5D5D']] },
   blind: { cls: BlindGame, tone: 'lilac', t: 'Без экрана', d: 'Команды звучат голосом — смотри на руку, а не на телефон', skill: 'Связь «мышца — действие»', tile: 't-lilac', ic: 'ear',
     goal: lv => `Выполнить ${LV(lv, [10, 14, 18])} команд, ≥60% верно · ${lv < 2 ? 'команда видна текстом' : lv < 3 ? 'на экране только индикатор' : 'экран выключен'}`, ctl: [['К1', 'низкий тон — «сожми»', '#F27D45'], ['К2', 'высокий тон — «раскрой»', '#3E9FD6'], ['Покой', 'мягкий тон — «расслабь»', '#C8BAAE'], ['Звук', 'включите звук телефона', '#9B78E8']] },
   react: { cls: ReactGame, tone: 'sun', t: 'Реакция', d: 'Сожми, раскрой или замри — как можно быстрее', skill: 'Скорость и изоляция', tile: 't-sun', ic: 'bolt',

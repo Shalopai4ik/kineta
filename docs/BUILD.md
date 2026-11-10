@@ -26,8 +26,8 @@ package.json          npm test · test:unit · test:e2e · test:monkey · serve 
 ## Тесты
 
 ```bash
-npm run test:unit   # ~30 с: 54 теста, без браузера (стресс игр — основная часть времени)
-npm run test:e2e    # ~6 мин: Chrome/Edge headless, 29 сценариев, 0 ошибок консоли
+npm run test:unit   # ~30 с: 58 тестов, без браузера (стресс игр — основная часть времени)
+npm run test:e2e    # ~6 мин: Chrome/Edge headless, 30 сценариев, 0 ошибок консоли
 npm run test:monkey # ~3 мин: 30 сценариев — повреждённые сохранения, мусорные deep link, postMessage и пакеты, 700 случайных нажатий
 npm test            # все три набора
 node tests/e2e/monkey.mjs 2000 42   # больше действий и своё зерно (воспроизводимо)
@@ -46,7 +46,7 @@ node tests/e2e/monkey.mjs 2000 42   # больше действий и своё 
 cd mobile
 npm install
 npm run apk                      # = powershell -File scripts/build-apk.ps1
-# → mobile/dist/kineta-3.3.1-debug.apk
+# → mobile/dist/kineta-3.4.0-debug.apk
 ```
 
 Что делает скрипт:
@@ -58,7 +58,7 @@ npm run apk                      # = powershell -File scripts/build-apk.ps1
 Параметры скрипта: `-Sdk`, `-Jdk`, `-Work`, `-Type release`. Release-сборку нужно подписать своим ключом.
 
 Установка на телефон:
-- `adb install -r mobile/dist/kineta-3.3.1-debug.apk`;
+- `adb install -r mobile/dist/kineta-3.4.0-debug.apk`;
 - или скопировать APK на телефон и открыть его, разрешив установку из неизвестных источников.
 
 Минимальная версия — Android 8.0 (API 26). Размер APK — несколько мегабайт при ориентире 100–150 МБ.

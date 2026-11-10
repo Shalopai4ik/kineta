@@ -127,6 +127,7 @@ h2 a,h2 button.lnk{font-size:13px;color:var(--primary);font-weight:800;cursor:po
 .seg .sl{position:absolute;top:4px;bottom:4px;border-radius:11px;background:var(--card);box-shadow:var(--shadow);transition:left .35s var(--spring),width .35s var(--spring)}
 .seg button{flex:1;padding:9px 6px;border-radius:11px;font-size:13.5px;font-weight:800;color:var(--muted);position:relative;z-index:1;transition:color .2s;min-width:0}
 .seg button.on{color:var(--text)}
+.seg:has(> button:nth-child(5)) button{flex:1 1 auto;font-size:12.5px;padding:9px 4px;white-space:nowrap} /* 4 варианта (режим одновременной активации) — ширина по тексту, без переноса */
 .seg-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .seg-btns button{padding:11px 6px;border-radius:14px;background:var(--card);box-shadow:inset 0 0 0 1.5px var(--line);font-weight:800;font-size:13.5px}
 .seg-btns button.on{background:var(--primary-soft);box-shadow:inset 0 0 0 1.5px var(--primary);color:var(--primary-ink)}

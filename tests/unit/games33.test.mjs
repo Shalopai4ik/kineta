@@ -62,3 +62,20 @@ test('«Кружка»: яйцо только с уровня 3, банка тя
   assert.ok(k.run("CUPS.find(c => c.k === 'jar').mid") > .7);
   assert.equal(k.run("CUPS.find(c => c.k === 'egg').noRefill"), true);
 });
+
+test('Q&A 22: «Без экрана» в СПППР на 6 жестах даёт команды супинации, приведения и отведения и засчитывает их по устойчивому жесту', () => {
+  const k = k0(); k.run("C().mode = 'spppr'; C().spGest = 6;");
+  let found = false;
+  for (let n = 0; n < 20 && !found; n++) found = k.run('new BlindGame(2)').cmds.some(c => c.startsWith('G:'));
+  assert.ok(found, 'на уровне 2 есть команды доп. жестов');
+  assert.ok(!k.run('new BlindGame(1)').cmds.some(c => c.startsWith('G:')), 'уровень 1 — только К1/К2/покой');
+  const g = k.run(`globalThis.__b = new BlindGame(2); __b.resize(390, 600); __b.cmds = ['G:supination', 'CH1']; __b.N = 2; __b`);
+  for (let i = 0; i < 60 * 8 && !g.done; i++) {
+    const want = g.ph === 'cue' && g.pt > .3 ? g.cue : null;
+    k.run(`Ctrl.g = ${JSON.stringify(want && want.startsWith('G:') ? want.slice(2) : 'neutral')}`);
+    const st = want && !want.startsWith('G:') ? want : 'REST';
+    g.update(1 / 60, { state: st, a: [st === 'CH1' ? .7 : 0, 0] });
+  }
+  assert.equal(g.ok, 2);
+  k.run("C().mode = 'emg'");
+});

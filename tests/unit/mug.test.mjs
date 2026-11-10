@@ -51,6 +51,19 @@ test('встречное сокращение при переноске расп
   k.run('C().thr1 = .38; C().thr2 = .35;');
   for (let i = 0; i < 2000 && g.ph !== 'carry'; i++) bot(g);
   assert.equal(g.ph, 'carry');
-  for (let i = 0; i < 400 && g.ph === 'carry'; i++) step(g, 'BOTH', .6, .6);
+  // обе мышцы напряжены ниже порогов (состояние — покой): встречный сигнал, но не команда
+  for (let i = 0; i < 400 && g.ph === 'carry'; i++) step(g, 'REST', .3, .3);
   assert.equal(g.fails.spill, 1);
+});
+
+test('Q&A 11: «обе мышцы» дольше времени смены жеста меняют хват — кружка выпадает', () => {
+  const { k, g } = game(1);
+  for (let i = 0; i < 2000 && g.ph !== 'carry'; i++) bot(g);
+  assert.equal(g.ph, 'carry');
+  const ms = k.run('C().switchMs');
+  for (let t = 0; t < ms / 1000 * .6; t += 1 / 60) step(g, 'BOTH', .6, .6); // короткое — ещё не смена хвата
+  assert.equal(g.fails.swap, 0);
+  for (let i = 0; i < 60 && g.ph === 'carry'; i++) step(g, 'BOTH', .6, .6);
+  assert.equal(g.fails.swap, 1); assert.ok(g.fallen > 0);
+  assert.ok(g.result().extra.some(([n]) => n === 'Смена хвата с кружкой'));
 });

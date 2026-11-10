@@ -182,7 +182,7 @@ window.KinetaTrainer = {
   remote: { connect: url => Remote.connect(url), stop: () => Remote.stop(), status: () => ({ on: Remote.on, url: C().remote || '' }) },
   getThresholds: () => ({ thr1: thrToRaw(0), thr2: thrToRaw(1), gain1: C().gain1, gain2: C().gain2, source: C().thrSrc }),
   setConfig(p) { const m = C().mode; merge(S.cfg, p || {}); Ctrl.applyDevThr(); applyMirror(); save(); if (C().mode !== m) Ctrl.restart(); },
-  getState: () => ({ state: Ctrl.state, a: Ctrl.a.slice(), grip: Prosthesis.grip, gesture: S.activeId, pose: Prosthesis.pose.slice(), source: Ctrl.source() }),
+  getState: () => ({ state: Ctrl.state, a: Ctrl.a.slice(), grip: Prosthesis.grip, gesture: S.activeId, pose: Prosthesis.pose.slice(), source: Ctrl.source(), blocked: Ctrl.blocked }),
   getProgress: () => structuredClone({ profile: S.profile, games: S.games, history: S.history, stats: S.stats, feedback: S.feedback || [] }),
   getGestures: () => structuredClone({ gestures: S.gestures, rotation: S.rotation, active: S.activeId }),
   setGesture: id => Prosthesis.setActive(id),

@@ -125,4 +125,18 @@ await step('Цвета руки, формы каналов, крупный ре�
   await js('C().big = false; applyBig(); C().theme = "light"; applyTheme()'); await size(390, 844);
 });
 
+await step('Q&A 10: режим «Блокировка» — 4 варианта помещаются на 360 px, игра подсказывает о блокировке; без сокращений звёзд нет', async () => {
+  await size(360, 780); await js('C().quickCal = false; C().coMode = "lock"; C().mode = "emg"; Ctrl.restart(); save(true)');
+  await js('App.go("sensors", {}, { force: true })'); await sleep(800);
+  await js('document.querySelector("[data-seg=co]").scrollIntoView({ block: "center" })'); await sleep(300);
+  await js('Intent.auto = [.8, .8]'); await sleep(900); await shot('24-sensors-lock-360');
+  const over = await js('document.querySelector("#view").scrollWidth - document.querySelector("#view").clientWidth'); if (over > 2) throw new Error('горизонтальная прокрутка ' + over);
+  const segW = await js('(() => { const s = document.querySelector("[data-seg=co]"); return [...s.querySelectorAll("button")].map(b => b.scrollWidth - b.clientWidth); })()');
+  if (segW.some(x => x > 1)) throw new Error('текст кнопок режима не помещается: ' + segW);
+  await js('KinetaTrainer.open("race", { diff: 1 })'); await sleep(800); await js('SCR.play.begin(App.cur.el)'); await sleep(4500); await shot('24-race-lock');
+  if (!(await js('document.querySelector("#gHint").textContent.includes("Блокировка")'))) throw new Error('нет подсказки о блокировке');
+  await js('Intent.auto = null; SCR.play.finish()'); await sleep(1200); await shot('25-race-noact');
+  if (!(await js('document.body.innerText.includes("Сокращений мышц почти не было")'))) throw new Error('нет совета «без сокращений звёзд нет»');
+  await js('C().coMode = "both"; save(true)'); await size(390, 844);
+});
 report();

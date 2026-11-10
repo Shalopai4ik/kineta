@@ -75,7 +75,9 @@ const ACH = [
   { id: 'fast', icon: 'bolt', t: 'Молния', d: 'Реакция быстрее 350 мс', p: () => [S.history.some(h => h.react && h.react < 350) ? 1 : 0, 1] },
   { id: 'stars', icon: 'star', t: 'Звездочёт', d: '3 звезды в 5 играх', p: () => [Math.min(5, ARCADE().filter(id => S.games[id]?.stars >= 3).length), 5] },
   { id: 'pilot', icon: 'bird', t: 'Пилот', d: '3000 очков в «Искре»', p: () => [Math.min(3000, S.games.flap?.best || 0), 3000] },
-  { id: 'expert', icon: 'trophy', t: 'Эксперт', d: 'Ранг игрока 10', p: () => [Math.min(10, plvl()), 10] }
+  { id: 'expert', icon: 'trophy', t: 'Эксперт', d: 'Ранг игрока 10', p: () => [Math.min(10, plvl()), 10] },
+  // финал основного сценария: все уровни всех игр пройдены хотя бы на одну звезду — дальше бесконечный режим и недели
+  { id: 'master', icon: 'shield', t: 'Мастер управления', get d() { return `Пройди все ${ARCADE().length * 3} уровней`; }, p: () => [ARCADE().reduce((a, id) => a + gst(id).ls.filter(x => x >= 1).length, 0), ARCADE().length * 3] }
 ];
 function checkAch() {
   ACH.forEach(a => { const [c, n] = a.p(); if (c >= n && !S.ach[a.id]) { S.ach[a.id] = Date.now(); addXP(100); reward(a.icon, 'Достижение: ' + a.t, a.d + ' · +100 XP', 90); } });
@@ -193,7 +195,8 @@ function getCss(v) { const th = document.documentElement.dataset.theme; if (th !
 
 /* ---------------- Хелперы разметки ---------------- */
 const stateChip = (id = 'stchip') => `<span class="stchip" id="${id}"><i></i>${ST.REST.n}</span>`;
-function updChip(el) { if (!el) return; const s = ST[Ctrl.state]; if (el._s !== Ctrl.state) { el._s = Ctrl.state; el.style.setProperty('--sc', s.hex); el.innerHTML = `<i></i>${s.n}`;  } }
+const LOCK_ST = { n: 'Блокировка', hex: '#8A7F78' };
+function updChip(el) { if (!el) return; const k = Ctrl.blocked ? 'LOCK' : Ctrl.state, s = Ctrl.blocked ? LOCK_ST : ST[Ctrl.state]; if (el._s !== k) { el._s = k; el.style.setProperty('--sc', s.hex); el.innerHTML = `<i></i>${s.n}`; } }
 const seg = (name, opts, cur) => `<div class="seg" data-seg="${name}"><div class="sl"></div>${opts.map(([k, l]) => `<button data-v="${k}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 function bindSeg(root, name, cb) {
   const el = $(`[data-seg="${name}"]`, root); if (!el) return;
@@ -765,7 +768,8 @@ SCR.editor = {
 const CO_D = {
   both: 'К1 + К2 вместе — отдельная команда (смена жеста, нитро, ноты «обе»). Тренирует умение разделять 4 состояния.',
   classic: 'Как у протеза в классическом режиме: первый сигнал над порогом держит управление, пока не опустится; второй его не перехватывает.',
-  sport: 'Как в спортивном режиме: второй сигнал может перехватить управление до окончания первого. Игровые действия «обе мышцы» отключаются.'
+  sport: 'Как в спортивном режиме: второй сигнал может перехватить управление до окончания первого. Игровые действия «обе мышцы» отключаются.',
+  lock: 'Как при включённой блокировке протеза: пока обе мышцы выше порогов, протез и игра стоят. Тренирует расслаблять лишнюю мышцу — иначе управление блокируется. Действия «обе мышцы» отключаются.'
 };
 const thrDesc = () => C().thrSrc === 'device'
   ? `Пороги приходят от протеза в потоке данных: К1 ${C().devThr[0]}, К2 ${C().devThr[1]} из 255. Если подвинуть порог на графике, игра перейдёт на свои пороги.`
@@ -801,7 +805,7 @@ SCR.sensors = {
       <h2>Режим управления</h2>
       <div class="card">${c.mode === 'emg' ? `
         <div class="cs2">Одновременное напряжение К1 + К2</div>
-        ${seg('co', [['both', 'Действие 3'], ['classic', 'Классический'], ['sport', 'Спортивный']], c.coMode)}
+        ${seg('co', [['both', 'Действие 3'], ['classic', 'Классика'], ['sport', 'Спорт'], ['lock', 'Блокировка']], c.coMode)}
         <p class="sub small" style="margin:8px 2px 12px" id="coD">${CO_D[c.coMode]}</p>
         <div class="cs2">Пороги срабатывания</div>
         ${seg('ts', [['game', 'Свои в игре'], ['device', 'Из протеза']], c.thrSrc)}
@@ -1132,9 +1136,9 @@ SCR.play = {
     const pg = $('#gProg', el); if (pg && g.progress) pg.style.width = pct(g.progress());
     const chips = (g.chips?.() || []).map(([k, v, c]) => `<span${c ? ` style="--c:${c}"` : ''}><em>${k}</em>${v}</span>`).join('');
     if (chips !== this.lastChips) { $('#gChips', el).innerHTML = chips; this.lastChips = chips; }
-    const h = this.intro ? '' : this.paused ? 'Приготовься…' : g.hint?.() || ''; const H = Array.isArray(h) ? h : [h, ''];
+    const h = this.intro ? '' : this.paused ? 'Приготовься…' : Ctrl.blocked ? ['Блокировка: обе мышцы выше порога — расслабь лишнюю', 'warn'] : g.hint?.() || ''; const H = Array.isArray(h) ? h : [h, ''];
     if (H.join() !== this.lastHint) { const he = $('#gHint', el); he.textContent = H[0]; he.className = 'ghint ' + (H[1] || ''); this.lastHint = H.join(); Voice.hint(H, this.p.id); }
-    const ch = $('#gChip', el), s = ST[Ctrl.state]; if (ch && ch._s !== Ctrl.state) { ch._s = Ctrl.state; ch.style.setProperty('--sc', s.hex); ch.classList.toggle('on', Ctrl.state !== 'REST'); $('span', ch).textContent = s.n; }
+    const ck = Ctrl.blocked ? 'LOCK' : Ctrl.state, ch = $('#gChip', el), s = Ctrl.blocked ? LOCK_ST : ST[Ctrl.state]; if (ch && ch._s !== ck) { ch._s = ck; ch.style.setProperty('--sc', s.hex); ch.classList.toggle('on', ck !== 'REST'); $('span', ch).textContent = s.n; }
     $$('.pad', el).forEach(p => { const i = +p.dataset.ch; $('.fill', p).style.height = pct(Ctrl.a[i]); $('.thl', p).style.bottom = pct(C()['thr' + (i + 1)]); p.classList.toggle('hot', Ctrl.on[i]); });
   },
   finish() {
@@ -1143,7 +1147,9 @@ SCR.play = {
     if (r.bal != null) r.extra.push(['Баланс К1 / К2', `${Math.round(r.bal * 100)} / ${100 - Math.round(r.bal * 100)} %`]);
     if (r.fat != null) r.extra.push(['Сила к концу игры', r.fat > .05 ? '−' + Math.round(r.fat * 100) + ' %' : 'без спада']);
     if (Ctrl.m && C().mode === 'spppr') { const gs = Object.entries(Ctrl.m.gest); if (gs.length) r.extra.push(['Жесты СПППР', gs.map(([k, n]) => SPN[k].slice(0, 4) + '. ' + n).join(' · ')]); }
-    Session.fatigue = r.fat != null && r.fat > .25; r.stars = r.win === false ? 0 : starsFor(r.acc, purity ?? r.acc); r.lv = lv; r.tl = this.tl.slice(); const endless = !!this.p.endless;
+    Session.fatigue = r.fat != null && r.fat > .25; r.stars = r.win === false ? 0 : starsFor(r.acc, purity ?? r.acc);
+    // без сокращений мышц звёзд нет: уровень не открывается «сам», даже если сцена дошла до конца (машина в гонке едет сама)
+    if (!GAMES[id].tut && Ctrl.m && Ctrl.m.active + Ctrl.m.tb < .5) { r.stars = 0; r.noAct = true; } r.lv = lv; r.tl = this.tl.slice(); const endless = !!this.p.endless;
     const st = gst(id), prevBest = bestScore(id), record = !GAMES[id].tut && r.win !== false && r.score > prevBest && prevBest > 0, U0 = unlockedLv(id);
     st.plays++; if (r.win !== false) st.best = Math.max(st.best, r.score); // рекорд — только за пройденный уровень
     if (!endless) { st.ls[lv - 1] = Math.max(st.ls[lv - 1] || 0, r.stars); st.stars = Math.max(...st.ls); }
@@ -1188,7 +1194,8 @@ SCR.result = {
   render(p) {
     const r = p.r, g = GAMES[p.id], tut = g.tut, lv = p.diff || 1;
     const title = r.win === false ? 'Почти получилось' : tut ? 'Обучение пройдено' : r.stars >= 3 ? 'Превосходно!' : r.stars === 2 ? 'Отлично!' : r.stars === 1 ? 'Уровень пройден' : 'Попробуй ещё раз';
-    const tip = r.fat != null && r.fat > .25 ? 'К концу игры сила сокращений упала на ' + Math.round(r.fat * 100) + '% — это признак усталости. Отдохни пару минут, прежде чем играть дальше.'
+    const tip = r.noAct ? 'Сокращений мышц почти не было — звёзды и новые уровни даются только за управление сигналом. Попробуй ещё раз с К1 и К2.'
+      : r.fat != null && r.fat > .25 ? 'К концу игры сила сокращений упала на ' + Math.round(r.fat * 100) + '% — это признак усталости. Отдохни пару минут, прежде чем играть дальше.'
       : r.purity != null && r.purity < .7 ? 'Мышца-антагонист часто включалась вместе с рабочей. Сокращай медленнее и держи вторую мышцу расслабленной.'
       : r.bal != null && (r.bal > .72 || r.bal < .28) ? `Работал в основном ${r.bal > .5 ? 'К1 (сгибатели)' : 'К2 (разгибатели)'}. Для протеза важны оба канала — попробуй игру, где ведущим будет ${r.bal > .5 ? 'К2' : 'К1'}.`
       : r.acc < .6 ? 'Точности пока не хватает — попробуй уровень ниже или повысь чувствительность датчиков.'
@@ -1385,7 +1392,7 @@ ${S.demo ? '<p class="demo">Внимание: статистика содерж�
 <h2>Настройки управления</h2><table>
 <tr><td>Пороги К1 / К2 (0…255)</td><td>${thrToRaw(0)} / ${thrToRaw(1)} (${c.thrSrc === 'device' ? 'из протеза' : 'игровые'})</td></tr>
 <tr><td>Чувствительность К1 / К2</td><td>${c.gain1} / ${c.gain2}</td></tr>
-<tr><td>Одновременная активация</td><td>${{ both: 'отдельное действие', classic: 'классический', sport: 'спортивный' }[c.coMode] || c.coMode}</td></tr>
+<tr><td>Одновременная активация</td><td>${{ both: 'отдельное действие', classic: 'классический', sport: 'спортивный', lock: 'блокировка протеза' }[c.coMode] || c.coMode}</td></tr>
 <tr><td>Калибровка</td><td>${S.calib.at ? new Date(S.calib.at).toLocaleDateString('ru-RU') : 'не проводилась'}</td></tr></table>
 ${fb ? `<h2>Отзывы пользователя</h2><ul>${fb}</ul>` : ''}
 <p class="m" style="margin-top:28px">Сформировано приложением Kineta ${APP_VERSION} ${now.toLocaleString('ru-RU')}. Показатели получены в игровом тренажёре и не являются медицинским заключением.</p>

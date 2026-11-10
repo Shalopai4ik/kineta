@@ -21,7 +21,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const easeOut = t => 1 - Math.pow(1 - t, 3);
 /* квантиль выборки (0.5 — медиана, 0.9 — 90-й перцентиль); пустая выборка — 0 */
 const quantile = (a, q) => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * q))]; };
-const APP_VERSION = '3.3.1';
+const APP_VERSION = '3.4.0';
 
 /* ---------------- Шина событий ---------------- */
 const Bus = {
@@ -66,7 +66,7 @@ const DEF = {
   cfg: {
     mode: 'emg', thr1: .38, thr2: .35, gain1: 10, gain2: 10, hyst: .75, deadzone: .05, smoothing: .35, slew: .15,
     suppressMs: 30, bothThr: .4, switchMs: 280, speed: 2.2, preset: 'norm',
-    // coMode — одновременная активация К1+К2: 'both' — отдельное действие 3 (по ТЗ), 'classic' — первый сигнал держит управление, 'sport' — второй перехватывает
+    // coMode — одновременная активация К1+К2: 'lock' — блокировка протеза (Q&A 10), 'both' — отдельное действие 3 (по ТЗ), 'classic' — первый сигнал держит управление, 'sport' — второй перехватывает
     // thrSrc — откуда пороги: 'game' — свои игровые (калибровка), 'device' — пороги, пришедшие от протеза в потоке (0…255)
     // spGest — словарь СПППР: 2 жеста + нейтраль или 6 жестов + нейтраль; hand — сторона протеза (здоровая рука — противоположная)
     coMode: 'both', thrSrc: 'game', devThr: [97, 89], spGest: 6, hand: 'left', sessionMin: 10, remote: '',
@@ -96,7 +96,7 @@ const oneOf = (v, list, d) => list.includes(v) ? v : d;
 function sanitize() {
   const c = S.cfg;
   c.mode = oneOf(c.mode, ['emg', 'spppr'], 'emg'); c.theme = oneOf(c.theme, ['light', 'dark', 'auto'], 'light');
-  c.coMode = oneOf(c.coMode, ['both', 'classic', 'sport'], 'both'); c.thrSrc = oneOf(c.thrSrc, ['game', 'device'], 'game');
+  c.coMode = oneOf(c.coMode, ['both', 'classic', 'sport', 'lock'], 'both'); c.thrSrc = oneOf(c.thrSrc, ['game', 'device'], 'game');
   c.hand = oneOf(c.hand, ['left', 'right'], 'left'); c.spGest = oneOf(c.spGest, [2, 6], 6);
   if (!Object.hasOwn(HAND_PALS, c.handPal)) c.handPal = 'titan';
   c.thr1 = clamp(c.thr1, .08, .95); c.thr2 = clamp(c.thr2, .08, .95); c.gain1 = clamp(Math.round(c.gain1), 1, 20); c.gain2 = clamp(Math.round(c.gain2), 1, 20);
@@ -397,12 +397,12 @@ const Ctrl = {
   a: [0, 0], s: [0, 0], raw: [0, 0], nRaw: [0, 0], on: [false, false], onT: [0, 0], lastEmg: 0, rate: 0, nS: 0, rateT: 0,
   state: 'REST', cand: 'REST', candT: 0, stateT: 0, lastT: 0, rawCand: 'REST', rawCandT: 0, lat: [], m: null,
   p: zeroP(), tp: null, lastTs: null, lastArr: 0, pktDt: .05, pkts: 0, bad: 0, lossFlag: false, lost: false, lastTick: 0,
-  g: 'neutral', gCand: 'neutral', gCandT: 0, gCandPk: 0, devThr: null,
-  external: false, src: null,
+  g: 'neutral', gCand: 'neutral', gCandT: 0, gCandPk: 0, devThr: null, acc: null, accTop: null, rawTop: null, suspect: null, tpRaw: null, forgiven: 0,
+  external: false, src: null, blocked: false,
   restart() {
     this.src?.stop(); this.src = null;
     const was = this.state, wasLost = this.lost;
-    Object.assign(this, { a: [0, 0], s: [0, 0], raw: [0, 0], nRaw: [0, 0], on: [false, false], state: 'REST', cand: 'REST', tp: null, lastTs: null, p: zeroP(), pkts: 0, bad: 0, lat: [], lastEmg: 0, lastArr: 0, lossFlag: false, lost: false, rate: 0, nS: 0, rateT: 0, g: 'neutral', gCand: 'neutral' });
+    Object.assign(this, { a: [0, 0], s: [0, 0], raw: [0, 0], nRaw: [0, 0], on: [false, false], state: 'REST', cand: 'REST', tp: null, lastTs: null, p: zeroP(), pkts: 0, bad: 0, lat: [], lastEmg: 0, lastArr: 0, lossFlag: false, lost: false, rate: 0, nS: 0, rateT: 0, g: 'neutral', gCand: 'neutral', acc: null, accTop: null, rawTop: null, suspect: null, tpRaw: null, forgiven: 0 });
     if (was !== 'REST') Bus.emit('state', { state: 'REST', prev: was, t: performance.now() });
     if (wasLost) Bus.emit('signal:back');
     if (this.external) return;
@@ -464,7 +464,19 @@ const Ctrl = {
     if (!Number.isFinite(sum)) { this.bad++; return; } // 1e308 + 1e308 — пакет испорчен
     if (sum > 0) for (const k of SP_ALL) tp[k] /= sum; else tp.neutral = 1;
     if (C().spGest !== 6) { for (const k of SP_KEYS) { tp.neutral += tp[k]; tp[k] = 0; } } // модель на 2 жеста: прочие классы — нейтраль
-    this.tp = tp;
+    this.tpRaw = tp; // сырой пакет — для замера задержки и графика «Путь сигнала»
+    // Прощение единичных ошибок классификатора (ТЗ, коадаптация): пакет, в котором сменился ведущий класс,
+    // сначала учитывается с весом 0.3 — одиночный выброс не включает канал. Следующий пакет с тем же
+    // классом подтверждает смену, и цель берётся полностью (+1 интервал пакетов к задержке только на смену класса).
+    const top = SP_ALL.reduce((b, k) => tp[k] > tp[b] ? k : b, 'neutral');
+    if (this.acc && top !== this.accTop && top !== this.rawTop) {
+      const w = .3; this.tp = Object.fromEntries(SP_ALL.map(k => [k, this.acc[k] * (1 - w) + tp[k] * w])); this.suspect = top;
+    } else {
+      if (this.suspect && this.suspect !== top) this.forgiven++; // выброс не подтвердился — прощён
+      else if (this.suspect) this.snap = true; // смена подтверждена — догоняем цель быстрее, чтобы не копить задержку
+      this.suspect = null; this.acc = tp; this.accTop = top; this.tp = tp;
+    }
+    this.rawTop = top;
   },
   tick(now) {
     // сторож связи для обоих потоков: > 200 мс — инерция к покою, > 1.5 с — критическая потеря (signal:lost), возврат — signal:back
@@ -483,11 +495,11 @@ const Ctrl = {
     this.lossFlag = now - this.lastArr > LOSS_SOFT;
     if (this.lossFlag) { const k = Math.exp(-dt / .18); for (const key in this.tp) if (key !== 'neutral') this.tp[key] *= k; }
     // интерполяция между пакетами: постоянная времени = фактический интервал по часам МК (джиттер 10…100+ мс без рывков)
-    const tau = clamp(this.pktDt, .03, .12), f = 1 - Math.exp(-dt / tau);
+    const tau = this.snap ? .02 : clamp(this.pktDt * .6, .02, .08), f = 1 - Math.exp(-dt / tau); this.snap = false;
     for (const key of SP_ALL) this.p[key] += (this.tp[key] - this.p[key]) * f;
     this.stableGesture(now);
     const map = (v, i) => clamp((v - .12) / .7 * this.gainK(i));
-    this.nRaw = [map(this.tp.flexion, 1), map(this.tp.extension, 2)];
+    const raw = this.lossFlag ? this.tp : this.tpRaw || this.tp; this.nRaw = [map(raw.flexion, 1), map(raw.extension, 2)];
     this.evaluate(map(this.p.flexion, 1), map(this.p.extension, 2), C().spGest === 6 && this.p.pronation > C().bothThr, now);
   },
   /* устойчивый жест СПППР: единичная ошибка классификации прощается — новый жест принимается, если держится ≥ 2 пакетов и ≥ 120 мс */
@@ -511,8 +523,10 @@ const Ctrl = {
       if (!(on0 && on1)) return on0 ? 'CH1' : on1 ? 'CH2' : 'REST';
       if (c.coMode === 'classic') return cur === 'CH1' || cur === 'CH2' ? cur : a0 >= a1 ? 'CH1' : 'CH2';
       if (c.coMode === 'sport') return t1 > t0 ? 'CH2' : 'CH1';
+      if (c.coMode === 'lock') return 'REST'; // блокировка: оба выше порогов — протез и игра стоят, пока одна мышца не расслабится
       return 'BOTH';
     };
+    this.blocked = bothFlag == null && c.coMode === 'lock' && this.on[0] && this.on[1];
     const cand = bothFlag != null ? (bothFlag ? 'BOTH' : this.on[0] ? 'CH1' : this.on[1] ? 'CH2' : 'REST')
       : pickBoth(this.on[0], this.on[1], this.cand, this.a[0], this.a[1], this.onT[0], this.onT[1]);
     const r = this.nRaw.map(f), rc = bothFlag != null ? (bothFlag ? 'BOTH' : r[0] > thr[0] ? 'CH1' : r[1] > thr[1] ? 'CH2' : 'REST')
@@ -585,9 +599,10 @@ const Prosthesis = {
   },
   next() {
     const r = S.rotation.filter(G); if (!r.length) return;
-    const i = r.indexOf(S.activeId), nx = r[(i + 1) % r.length];
+    const i = r.indexOf(S.activeId), nx = r[(i + 1) % r.length], held = this.grip > .5;
     this.setActive(nx); Snd.swap(); Bus.emit('switch', nx);
-    toast('swap', 'Жест: ' + G(nx).name, 'Переключено со-сокращением');
+    // Q&A 11: при смене хвата протез раскрывается — то, что было в руке, может выпасть
+    toast('swap', 'Жест: ' + G(nx).name, held ? 'Хват сменился с предметом в руке — он мог выпасть' : 'Переключено со-сокращением');
   }
 };
 function countGesture(id) {

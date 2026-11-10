@@ -197,3 +197,32 @@ test('Поток 2: от первого пакета со сгибанием д�
     assert.ok(t1 != null && t1 - t0 <= 150, `интервал ${every} мс: ${t1 == null ? 'нет' : t1 - t0} мс`);
   }
 });
+
+test('Q&A 10: режим «Блокировка» — оба канала выше порогов блокируют управление, отпускание снимает блок', () => {
+  const k = fresh('emg', { coMode: 'lock' });
+  emg(k, 300, () => [200, 8]); assert.equal(state(k), 'CH1');
+  emg(k, 300, () => [200, 210]); assert.equal(state(k), 'REST'); assert.equal(k.run('Ctrl.blocked'), true);
+  assert.equal(k.run('Ctrl.bothOK()'), false, 'игровые действия «обе мышцы» в режиме блокировки отключены');
+  emg(k, 300, () => [8, 210]); assert.equal(state(k), 'CH2'); assert.equal(k.run('Ctrl.blocked'), false);
+});
+
+test('Q&A 24: поток СПППР 10 Гц — одиночный ошибочный пакет не включает канал, задержка смены ≤ 150 мс', () => {
+  // нейтраль, один пакет «сгибание 0.93» (ошибка классификатора), снова нейтраль
+  let k = fresh('spppr');
+  const m = sp(k, 600, () => ({ neutral: .95, flexion: .05 }), { every: 100 });
+  sp(k, 100, () => ({ flexion: .93, neutral: .07 }), { every: 100, mcu: m });
+  sp(k, 400, () => ({ neutral: .95, flexion: .05 }), { every: 100, mcu: m });
+  assert.ok(!log(k).some(([e, d]) => e === 'state' && d.state === 'CH1'), 'выброс не должен включать К1');
+  assert.ok(k.run('Ctrl.forgiven') >= 1, 'выброс засчитан как прощённая ошибка');
+  // настоящее сгибание (два и более пакетов подряд) — CH1 не позже 150 мс от первого пакета
+  for (const pf of [.6, .8, .95]) {
+    k = fresh('spppr'); const mc = sp(k, 400, () => ({ neutral: .95, flexion: .05 }), { every: 100 });
+    let t0 = null, t1 = null;
+    for (let t = 0; t < 800 && t1 == null; t += 10) {
+      k.advance(10);
+      if (t % 100 === 0) { mc.t += 100; push(k, mc.t, { flexion: pf, neutral: 1 - pf }); t0 ??= k.now; }
+      k.run(`Ctrl.tick(${k.now})`); if (state(k) === 'CH1') t1 = k.now;
+    }
+    assert.ok(t1 != null && t1 - t0 <= 150, `сгибание ${pf}: ${t1 == null ? 'нет' : t1 - t0} мс`);
+  }
+});
