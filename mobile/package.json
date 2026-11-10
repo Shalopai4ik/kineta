@@ -1,6 +1,6 @@
 {
   "name": "kineta-mobile",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "private": true,
   "description": "Мобильная сборка Kineta (Android, iOS) — Capacitor-оболочка над prototype/",
   "scripts": {

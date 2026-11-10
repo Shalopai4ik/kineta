@@ -32,6 +32,7 @@ const Mission = {
     S.missions = { day: d, list }; save();
   },
   ev(type, k = 1) {
+    if (App.cur?.name === 'play' && SCR.play.p?.duel) return; // ход гостя в дуэли
     this.ensure();
     S.missions.list.forEach(m => {
       const def = MISSIONS.find(x => x.id === m.id); if (!def || m.done || def.ev !== type) return;
@@ -304,8 +305,15 @@ function weeklySheet() {
     <h3 class="h3">Мои попытки за неделю</h3>
     ${best.length ? `<div class="card" style="padding:4px 14px">${best.map((x, i) => `<div class="kv"><span class="l">${i + 1}. ${new Date(x.t).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric' })}${x.win ? '' : ' · не пройден'}</span><b>${fmtN(x.score)} · ${x.acc}%</b></div>`).join('')}</div>` : '<p class="sub">Попыток пока нет.</p>'}
     <p class="sub small" style="margin-top:8px">Недель подряд с выполненным испытанием: ${Weekly.streak()}</p>
+    <h3 class="h3">Таблица клуба</h3><div id="wClub">${Club.url() ? '<p class="sub">Загружаю…</p>' : '<p class="sub small">Общая таблица для центра реабилитации, кружка или семьи: на компьютере в той же сети — <b>node tools/relay.mjs</b>, адрес — сюда. Результаты испытания недели будут уходить в неё автоматически.</p>'}</div>
+    <div class="row" style="margin-top:6px"><input class="txt" id="wCU" inputmode="url" placeholder="http://192.168.1.5:8787" value="${esc(C().club || '')}" style="flex:1;min-width:0"><button class="btn ghost sm" id="wCS" style="width:auto;flex:none">${C().club ? 'Сохранить' : 'Подключить'}</button></div>
     <button class="btn" id="wGo" style="margin-top:14px">${ic('play')} Играть · уровень ${c.lv}</button>`, (sh, close) => {
     $('#wGo', sh).onclick = () => { if (sh._closing) return; close(); App.go('play', { id: c.id, diff: c.lv, weekly: true }); };
+    const box = $('#wClub', sh), load = () => { if (!Club.url()) return; box.innerHTML = '<p class="sub">Загружаю…</p>'; Club.list(c.k).then(list => { if (!sh.isConnected) return; const rows = Array.isArray(list?.rows) ? list.rows : [];
+      box.innerHTML = rows.length ? `<div class="card" style="padding:4px 14px">${rows.slice(0, 10).map((x, i) => `<div class="kv"><span class="l">${i + 1}. ${esc(x.name)}${x.id === Club.id() ? ' (вы)' : ''}</span><b>${fmtN(x.score)} · ${x.acc}%</b></div>`).join('')}</div>` : '<p class="sub">В таблице клуба пока пусто — сыграйте испытание недели.</p>'; })
+      .catch(e => { if (sh.isConnected) box.innerHTML = `<p class="sub small" style="color:var(--warn)">Сервер клуба не отвечает: ${esc(e.message)}</p>`; }); };
+    $('#wCS', sh).onclick = () => { const u = $('#wCU', sh).value.trim().replace(/\/$/, ''); if (u && !/^https?:\/\//.test(u)) return toast('info', 'Нужен адрес вида http://192.168.1.5:8787'); C().club = u; save(); toast('calendar', u ? 'Таблица клуба подключена' : 'Таблица клуба отключена'); load(); };
+    load();
   });
 }
 
@@ -539,6 +547,7 @@ SCR.home = {
     </div><div class="hcol">
     <h2 class="h2top">Тренировка</h2>
     <div class="list">
+      ${storyCard()}
       ${!sch ? `<button class="lrow" data-play="school">${gIcon('school')}<div><b>Школа управления</b><small>Начни отсюда: 7 коротких упражнений</small></div>${ic('chev', 'chev')}</button>` : ''}
       <button class="lrow" data-play="${dg}" data-daily="1">${gIcon(dg)}<div><b>Испытание дня · ${DG.t}</b><small>Двойной опыт за прохождение</small></div>${dailyAvail() ? '<span class="tag soft">×2 XP</span>' : `<span class="tag ok">${ic('check')} сегодня</span>`}</button>
       <button class="lrow" data-play="${rec.game}">${gIcon(rec.game)}<div><b>Подтянуть навык · ${rec.label.toLowerCase()}</b><small>${RG.t} · сейчас ${Math.round(rec.value * 100)}%</small></div>${ic('chev', 'chev')}</button>
@@ -995,6 +1004,8 @@ SCR.games = {
         <small>Сыграно: ${plur(plays, 'игра', 'игры', 'игр')} · слабый навык — ${sk[0].label.toLowerCase()} (${Math.round(sk[0].value * 100)}%), сильный — ${sk.at(-1).label.toLowerCase()}</small>
         <div class="skl">${sk.map(s => `<span title="${s.label}: ${Math.round(s.value * 100)}%"><b class="skv">${Math.round(s.value * 100)}</b><i style="height:${Math.round(4 + clamp((s.value - .3) / .7) * 22)}px"></i><em>${s.label.slice(0, 4)}</em></span>`).join('')}</div></div></div>
       <div class="list" style="margin-top:12px">
+        ${storyCard()}
+        <button class="lrow" data-duel="1">${badge('user', 'sky')}<div><b>Дуэль</b><small>2–4 игрока по очереди на одном телефоне · рейтинг</small></div>${ic('chev', 'chev')}</button>
         <button class="lrow" data-play="school">${gIcon('school')}<div><b>Школа управления</b><small>Режим обучения · 7 упражнений</small></div>${sch.plays ? `<span class="tag ok">${ic('check')}</span>` : '<span class="tag soft">начни здесь</span>'}</button>
         ${(c => `<button class="lrow" data-weekly="1">${badge('calendar', 'lilac')}<div><b>Испытание недели · ${GAMES[c.id].t}</b><small>${c.w.done ? 'Выполнено · можно улучшать результат' : `Уровень ${c.lv}, точность от ${c.acc}% · +150 XP и деталь`}</small></div>${c.w.done ? `<span class="tag ok">${ic('check')}</span>` : '<span class="tag soft">неделя</span>'}</button>`)(Weekly.cur())}
         <button class="lrow" data-play="${daily}" data-daily="1">${gIcon(daily)}<div><b>Испытание дня · ${DG.t}</b><small>${dailyAvail() ? 'Двойной опыт за прохождение' : 'Выполнено сегодня — завтра новое'}</small></div>${dailyAvail() ? '<span class="tag soft">×2 XP</span>' : `<span class="tag ok">${ic('check')}</span>`}</button>
@@ -1006,7 +1017,7 @@ SCR.games = {
         <div class="gc-foot"><span>${ic('trophy')} ${best ? fmtN(best) : 'нет рекорда'}</span><span>${ic('play')} ${playsOf(id) ? plur(playsOf(id), 'игра', 'игры', 'игр') : 'ещё не играли'}</span><span class="gc-go">Играть ${ic('chev')}</span></div></button>`; }).join('')}</div>
       <div class="note">${ic('info')}<span>Сложность подстраивается: очень чистая игра сразу открывает следующий уровень, при точности ниже 45% приложение предложит уровень проще. После 12 минут — пауза на отдых.</span></div>`;
   },
-  mount(el) { el.addEventListener('click', e => { if (e.target.closest('[data-weekly]')) return weeklySheet(); const p = e.target.closest('[data-play]'); if (p) openGame(p.dataset.play, !!p.dataset.daily); }); },
+  mount(el) { el.addEventListener('click', e => { if (e.target.closest('[data-weekly]')) return weeklySheet(); if (e.target.closest('[data-duel]')) return duelSheet(); const p = e.target.closest('[data-play]'); if (p) openGame(p.dataset.play, !!p.dataset.daily); }); },
   frame(dt, now, el) { $$('canvas[data-prev]', el).forEach(cv => { const r = cv.getBoundingClientRect(); if (r.bottom > 0 && r.top < innerHeight) paintPreview(cv, now); }); }
 };
 function openGame(id, daily) {
@@ -1047,7 +1058,7 @@ SCR.play = {
       <div class="gprog"><i id="gProg"></i></div>
       <div class="ginfo" id="gChips"></div>
       <div class="gwrap"><canvas id="gc"></canvas><div class="countdown" id="gCd"></div>
-        <div class="intro" id="gIntro"><div class="ic">${gIcon(p.id, 'lg')}<h3>${g.t}${g.tut ? '' : p.endless ? ' · бесконечный' : ' · уровень ' + lv}</h3><p>${g.goal(lv)}</p>
+        <div class="intro" id="gIntro"><div class="ic">${gIcon(p.id, 'lg')}${p.duel ? `<small class="ep-t">Дуэль · ход: ${esc(p.duel)}</small>` : p.story ? `<small class="ep-t">${esc(Story.epTitle(p.id, lv))}</small>` : ''}<h3>${g.t}${g.tut ? '' : p.endless ? ' · бесконечный' : ' · уровень ' + lv}</h3><p>${g.goal(lv)}</p>
           ${ctlList(g)}
           <button class="btn sm" id="gStart">${ic('play')} Старт</button><div class="sq"><i id="gSq"></i></div><div class="hint">или сожми К1 и подержи секунду</div></div></div></div>
       <div class="ghint" id="gHint"></div>
@@ -1056,7 +1067,7 @@ SCR.play = {
         <div class="pad c2 m2" data-ch="1"><div class="fill"></div><div class="thl"></div><span>Открыть · К2</span><kbd>J</kbd></div></div>`;
   },
   mount(el, p) {
-    Rewards.list = []; this.p = p; this.game = new GAMES[p.id].cls(p.diff || 1); this.paused = true; this.ended = false; this.lastScore = 0; this.intro = true; this.sq = 0; this.lastChips = ''; this.lastHint = null; this.qc = null; this.tl = []; this.tlT = 0;
+    Rewards.list = []; this.p = p; if (p.duel) Duel.useCal(p.duel); this.game = new GAMES[p.id].cls(p.diff || 1); this.paused = true; this.ended = false; this.lastScore = 0; this.intro = true; this.sq = 0; this.lastChips = ''; this.lastHint = null; this.qc = null; this.tl = []; this.tlT = 0;
     this.cv = $('#gc', el); this.ctx = this.cv.getContext('2d'); this.fit();
     $$('.pad', el).forEach(bindPad);
     $('#gP', el).onclick = () => this.intro ? App.back() : this.pause();
@@ -1071,7 +1082,7 @@ SCR.play = {
   /* Проверка датчиков перед игрой (5 с): покой → К1 → К2. Электроды каждый день стоят чуть иначе — пороги
      подстраиваются к сегодняшнему сигналу, чтобы правильное движение не засчитывалось как промах.
      Не чаще раза в 10 минут; только ЭМГ (у СПППР нет амплитуды). */
-  needQC() { return C().quickCal && C().mode === 'emg' && !GAMES[this.p.id].tut && Date.now() - (S.lastQC || 0) > 6e5; },
+  needQC() { if (C().mode === 'emg' && this.p.duel) return true; /* у каждого игрока дуэли своя калибровка */ return C().quickCal && C().mode === 'emg' && !GAMES[this.p.id].tut && Date.now() - (S.lastQC || 0) > 6e5; },
   quick(el) {
     this.qc = { i: 0, t: 0, c: [] };
     $('.gwrap', el).insertAdjacentHTML('beforeend', `<div class="qc" id="gQc">${badge('calib', 'peach', 'lg')}<small class="muted">Проверка датчиков · 5 секунд</small><b id="qcT"></b><span class="sub" id="qcD"></span><div class="qcbar"><i id="qcP"></i></div><button class="btn ghost sm" id="qcSkip">Пропустить</button></div>`);
@@ -1102,7 +1113,7 @@ SCR.play = {
     }
     this.countdown(el);
   },
-  unmount() { this.off?.(); this.offDev?.(); this.offSig?.(); this.offBack?.(); this.ro?.disconnect(); this.ended = true; Ctrl.m = null; },
+  unmount() { this.off?.(); this.offDev?.(); this.offSig?.(); this.offBack?.(); this.ro?.disconnect(); this.ended = true; Ctrl.m = null; if (this.p?.duel) Duel.endCal(this.p.duel); },
   fit() { const dpr = devicePixelRatio || 1, W = this.cv.offsetWidth, H = this.cv.offsetHeight; if (!W) return; this.cv.width = W * dpr; this.cv.height = H * dpr; this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.game.resize(W, H); },
   async countdown(el) {
     const cd = $('#gCd', el); this.paused = true; this.cdAbort = false; this.countingDown = true;
@@ -1125,7 +1136,7 @@ SCR.play = {
     if (this.intro) { this.sq = Ctrl.state === 'CH1' ? this.sq + dt : Math.max(0, this.sq - dt * 2); const q = $('#gSq', el); if (q) q.style.width = pct(clamp(this.sq / .9)); if (this.sq >= .9) { Snd.ok(); this.begin(el); } }
     if (this.qc) this.quickStep(dt, el);
     if (!this.paused && !this.ended) {
-      g.update(dt, Ctrl, now); addTrainTime(dt);
+      g.update(dt, Ctrl, now); if (!this.p.duel) addTrainTime(dt); // время гостя в дуэли — не в статистику владельца
       // лента активности каналов для карты игры: каждые 0.2 с — состояние и признак встречного сокращения
       this.tlT += dt; if (this.tlT >= .2) { this.tlT -= .2; const st = { REST: 0, CH1: 1, CH2: 2, BOTH: 3 }[Ctrl.state] || 0, c = C(), lk = (st === 1 && Ctrl.a[1] > c.thr2 * .5) || (st === 2 && Ctrl.a[0] > c.thr1 * .5); this.tl.push(st + (lk ? 4 : 0)); if (this.tl.length > 900) this.tl.shift(); }
       if (g.done) this.finish();
@@ -1149,7 +1160,9 @@ SCR.play = {
     if (Ctrl.m && C().mode === 'spppr') { const gs = Object.entries(Ctrl.m.gest); if (gs.length) r.extra.push(['Жесты СПППР', gs.map(([k, n]) => SPN[k].slice(0, 4) + '. ' + n).join(' · ')]); }
     Session.fatigue = r.fat != null && r.fat > .25; r.stars = r.win === false ? 0 : starsFor(r.acc, purity ?? r.acc);
     // без сокращений мышц звёзд нет: уровень не открывается «сам», даже если сцена дошла до конца (машина в гонке едет сама)
-    if (!GAMES[id].tut && Ctrl.m && Ctrl.m.active + Ctrl.m.tb < .5) { r.stars = 0; r.noAct = true; } r.lv = lv; r.tl = this.tl.slice(); const endless = !!this.p.endless;
+    if (!GAMES[id].tut && Ctrl.m && Ctrl.m.active + Ctrl.m.tb < .5) { r.stars = 0; r.noAct = true; }
+    // ход дуэли: в таблицу дуэли, без статистики, опыта и миссий владельца телефона
+    if (this.p.duel) { Duel.done(r); Bus.emit('level:end', { game: id, ...r, duel: true }); setTimeout(() => { if (App.cur?.name === 'play' && this.game === g) App.go('duel', {}, { fade: true }); }, 600); return; } r.lv = lv; r.tl = this.tl.slice(); const endless = !!this.p.endless;
     const st = gst(id), prevBest = bestScore(id), record = !GAMES[id].tut && r.win !== false && r.score > prevBest && prevBest > 0, U0 = unlockedLv(id);
     st.plays++; if (r.win !== false) st.best = Math.max(st.best, r.score); // рекорд — только за пройденный уровень
     if (!endless) { st.ls[lv - 1] = Math.max(st.ls[lv - 1] || 0, r.stars); st.stars = Math.max(...st.ls); }
@@ -1163,7 +1176,7 @@ SCR.play = {
       if (unlockedLv(id) > U0) r.unlocked = unlockedLv(id);
     }
     const d = today(), n = (d.n || 0) + 1; d.acc = Math.round(((d.acc || 0) * (n - 1) + r.acc * 100) / n); if (purity != null) d.purity = Math.round(((d.purity || 0) * (n - 1) + purity * 100) / n); if (r.react) d.react = Math.round(r.react); d.n = n;
-    if (this.p.weekly) r.weekly = Weekly.record(id, lv, r);
+    if (this.p.weekly) { r.weekly = Weekly.record(id, lv, r); Club.send(weekKey(), id, lv, r); }
     if (!GAMES[id].tut) S.history.push({ t: Date.now(), game: id, lv: endless ? 4 : lv, ad: endless ? lv : undefined, score: r.score, acc: Math.round(r.acc * 100), purity: purity == null ? null : Math.round(purity * 100), dur: Math.round(g.T), react: r.react ? Math.round(r.react) : undefined, stars: r.stars, win: r.win !== false, bal: r.bal == null ? undefined : Math.round(r.bal * 100), fat: r.fat == null ? undefined : Math.round(r.fat * 100), mode: C().mode });
     if (S.history.length > 300) S.history.shift();
     r.daily2 = !!this.p.daily && dailyAvail() && r.win !== false; if (r.daily2) S.dailyDone = dayKey();
@@ -1171,10 +1184,10 @@ SCR.play = {
     const xp = Math.round((40 + r.stars * 30 + (endless ? 60 : lv * 15) + Math.min(60, r.score / 50)) * (r.daily2 ? 2 : 1) * (r.win === false ? .5 : 1)); r.xp = xp; addXP(xp); touchStreak();
     // миссии качества засчитываются только за пройденный уровень, а не за любую попытку
     Mission.ev('game'); if (r.win !== false && purity != null && purity >= .8) Mission.ev('pure80'); if (r.stars >= 3) Mission.ev('stars3'); if (record) Mission.ev('record');
-    r.record = record; save(); checkAch(); Bus.emit('level:end', { game: id, ...r });
+    r.story = Story.after(id); r.record = record; save(); checkAch(); Bus.emit('level:end', { game: id, ...r });
     r.rewards = Rewards.list.splice(0);
     // если игрок уже ушёл с экрана игры — не перебрасываем его на результат
-    setTimeout(() => { if (App.cur?.name === 'play' && this.game === g) App.go('result', { id, r, diff: lv, daily: this.p.daily, endless, weekly: this.p.weekly }, { fade: true }); }, 600);
+    setTimeout(() => { if (App.cur?.name === 'play' && this.game === g) App.go('result', { id, r, diff: lv, daily: this.p.daily, endless, weekly: this.p.weekly, story: this.p.story }, { fade: true }); }, 600);
   }
 };
 function bindPad(p) {
@@ -1213,6 +1226,7 @@ SCR.result = {
       ${gameMap(r.tl || [])}
       ${r.endless ? `<div class="note ${r.endless.to >= r.endless.from ? 'ok' : ''}">${ic(r.endless.to >= r.endless.from ? 'bolt' : 'info')}<span>Сложность ${r.endless.from.toFixed(1)} → <b>${r.endless.to.toFixed(1)}</b>. ${r.endless.to > r.endless.from ? 'Следующая игра будет чуть труднее.' : r.endless.to < r.endless.from ? 'Следующая игра будет проще — закрепим навык.' : ''}</span></div>` : ''}
       ${r.weekly ? `<div class="note ${r.weekly.done ? 'ok' : ''}">${ic('calendar')}<span>${r.weekly.just ? '<b>Испытание недели выполнено!</b> +150 XP и деталь для мастерской.' : r.weekly.done ? 'Испытание недели уже выполнено — результат записан в таблицу.' : 'Попытка записана в таблицу испытания недели.'}</span></div>` : ''}
+      ${r.story ? `<div class="card story-end"><small class="muted">${r.story.place} пройдена · +100 XP</small><h3>${esc(r.story.n)}</h3><p class="story-txt">${r.story.outro}</p><div class="note life">${ic('hand')}<span><b>Упражнение в жизни.</b> ${r.story.life}</span></div>${r.story.fin ? `<p class="story-txt"><b>Эпилог.</b> ${STORY.epilogue}</p>` : ''}<button class="btn ghost sm" data-go="story" style="margin-top:8px">${ic('robot')} К сюжету</button></div>` : p.story ? `<button class="btn ghost sm" data-go="story" style="margin-top:10px">${ic('robot')} К сюжету</button>` : ''}
       ${r.unlocked ? `<div class="note ok">${ic('check')}<span><b>Открыт уровень ${r.unlocked}.</b> ${r.diffUp ? 'Ты играешь так чисто, что можно сразу идти дальше.' : 'Новые задачи уже ждут.'}</span></div>` : r.diffDn ? `<div class="note">${ic('info')}<span>Советуем вернуться на уровень ${lv - 1}, чтобы закрепить навык.</span></div>` : ''}
       ${r.rewards?.length ? `<h3 class="h3">Награды</h3><div class="list">${r.rewards.map((w, i) => `<div class="lrow">${badge(IC[w.icon] ? w.icon : 'star', TONES[i % 6])}<div><b>${esc(w.title)}</b><small>${esc(w.sub || '')}</small></div></div>`).join('')}</div>` : ''}
       <div class="note">${ic('chat')}<span>${tip}</span></div>
@@ -1225,7 +1239,7 @@ SCR.result = {
   mount(el, p) {
     if (p.r.stars >= 2 || (GAMES[p.id].tut && p.r.win)) { confetti(120); Snd.win(); } else Snd.ok();
     $('#rAgain', el).onclick = () => App.go('play', p.endless ? { id: p.id, diff: adaptOf(p.id), endless: true } : { id: p.id, diff: p.diff || 1, daily: p.daily, weekly: p.weekly });
-    $('#rNext', el)?.addEventListener('click', () => App.go('play', { id: p.id, diff: (p.diff || 1) + 1, daily: p.daily }));
+    $('#rNext', el)?.addEventListener('click', () => App.go('play', { id: p.id, diff: (p.diff || 1) + 1, daily: p.daily, story: p.story }));
     $('#rRest', el)?.addEventListener('click', () => restModal());
     $('#rHost', el)?.addEventListener('click', () => Host.back());
     // один отзыв на одну игру: повторное нажатие меняет оценку, а не добавляет запись

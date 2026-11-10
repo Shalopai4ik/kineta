@@ -86,7 +86,7 @@ const CLICKABLE = `(() => {
     out.push([Math.round(x), Math.round(y), (el.id ? '#' + el.id : el.tagName.toLowerCase()) + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '') + ' «' + (el.innerText || el.value || '').trim().slice(0, 18) + '»']);
   }
   return out; })()`;
-const SCREENS = ['home', 'gestures', 'sensors', 'games', 'progress', 'profile', 'achievements', 'calib', 'device', 'signal', 'editor', 'scan', 'perms'];
+const SCREENS = ['home', 'gestures', 'sensors', 'games', 'progress', 'profile', 'achievements', 'calib', 'device', 'signal', 'editor', 'scan', 'perms', 'story', 'duel'];
 await step(`Обезьяна: ${N} случайных действий (зерно ${SEED})`, async () => {
   await go('?reset=1', 1500); await js('S.onboarded = false; save(true)'); await go('', 2600);
   const log = []; const e0 = errors.length;

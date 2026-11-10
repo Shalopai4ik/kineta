@@ -5,7 +5,8 @@
 //   CHROME=путь node tests/e2e/smoke.mjs
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, sleep, out, BOT, STOP } from './cdp.mjs';
+import { spawn } from 'node:child_process';
+import { launch, sleep, out, root, BOT, STOP } from './cdp.mjs';
 
 const { js, shot, size, go, step, report } = await launch();
 
@@ -138,5 +139,69 @@ await step('Q&A 10: режим «Блокировка» — 4 варианта �
   await js('Intent.auto = null; SCR.play.finish()'); await sleep(1200); await shot('25-race-noact');
   if (!(await js('document.body.innerText.includes("Сокращений мышц почти не было")'))) throw new Error('нет совета «без сокращений звёзд нет»');
   await js('C().coMode = "both"; save(true)'); await size(390, 844);
+});
+await step('Сюжет: пролог, закрытые главы, концовка главы и упражнение в жизни на результате', async () => {
+  await size(390, 844); await go('?reset=1', 1500); await js('S.onboarded = true; S.perms.bt = "demo"; C().quickCal = false; save(true)'); await go('', 2500);
+  if (!(await js('document.body.innerText.includes("Сюжет · Город Кинета")'))) throw new Error('нет карточки сюжета на главной');
+  await js('App.go("story", {}, { fade: true })'); await sleep(900);
+  if (!(await js('!!document.querySelector(".modal") && document.querySelector(".modal").innerText.includes("Город механизмов")'))) throw new Error('нет пролога при первом входе');
+  await shot('26-story-prologue'); await js('document.querySelector(".modal [data-x=go]").click()'); await sleep(400);
+  if (!(await js('document.querySelector("[data-ch=\'1\']").classList.contains("lock")'))) throw new Error('глава 1 должна быть закрыта до Школы');
+  await shot('27-story-map');
+  await js('gst("school").plays = 1; save(true); App.go("story", {}, { fade: true, force: true })'); await sleep(700);
+  await js('document.querySelector("[data-ch=\'1\']").click()'); await sleep(700);
+  if (!(await js('document.querySelector(".sheet").innerText.includes("Упражнение в жизни")'))) throw new Error('нет упражнения в жизни в главе');
+  await shot('28-story-chapter');
+  await js('document.querySelector(".sheet [data-ep=\'1\']").click()'); await sleep(900);
+  if (!(await js('App.cur.name === "play" && SCR.play.p.story && document.querySelector("#gIntro").innerText.includes("Утренний рейс")'))) throw new Error('эпизод не открыл игру с названием');
+  await js(`SCR.play.begin(App.cur.el); ${BOT}`); await sleep(2500);
+  await js(`${STOP} gst("race").ls = [1, 1, 1]; SCR.play.finish()`); await sleep(1400);
+  if (!(await js('!!document.querySelector(".story-end") && document.body.innerText.includes("Дорога запчастей")'))) throw new Error('нет концовки главы на результате');
+  if (!(await js('!!S.story.done.race'))) throw new Error('глава не отмечена пройденной');
+  await shot('29-story-result');
+});
+await step('Дуэль: два хода по очереди, калибровка и статистика владельца не тронуты, рейтинг', async () => {
+  await js('C().mode = "emg"; Ctrl.restart(); S.calib.mvc1 = .77; S.calib.done = true; save(true)');
+  const hist0 = await js('S.history.length'), xp0 = await js('S.profile.xp');
+  await js('App.go("games", {}, { fade: true })'); await sleep(700); await js('document.querySelector("[data-duel]").click()'); await sleep(600);
+  await js('document.querySelectorAll("[data-n]")[0].value = "Ира"; document.querySelectorAll("[data-n]")[1].value = "Олег"; document.querySelector("#dG [data-g=react]").click()'); await shot('30-duel-setup');
+  await js('document.querySelector("#dGo").click()'); await sleep(600);
+  for (const who of ['Ира', 'Олег']) {
+    if (!(await js(`document.querySelector(".modal")?.innerText.includes("Ход: ${who}")`))) throw new Error('нет окна хода ' + who);
+    await js('document.querySelector(".modal [data-x=go]").click()'); await sleep(900);
+    if (!(await js(`SCR.play.p.duel === "${who}"`))) throw new Error('ход не того игрока');
+    await js('SCR.play.begin(App.cur.el)'); await sleep(400);
+    if (!(await js('!!document.querySelector("#gQc")'))) throw new Error('нет проверки датчиков перед ходом');
+    if (who === 'Ира') { await sleep(1300); await js('Intent.auto = [.9, 0]'); await sleep(1800); await js('Intent.auto = [0, .9]'); await sleep(1900); await js('Intent.auto = null'); await sleep(3000); }
+    else { await js('document.querySelector("#qcSkip").click()'); await sleep(3600); }
+    await js(`${BOT}`); await sleep(2500); await js(`${STOP} SCR.play.finish()`); await sleep(1300);
+    if ((await js('App.cur.name')) !== 'duel') throw new Error('после хода нет экрана дуэли');
+    if ((await js('S.calib.mvc1')) !== .77) throw new Error('калибровка владельца изменилась');
+    if (who === 'Ира' && (await js('Duel.st.cal["Ира"].mvc1')) === .77) throw new Error('калибровка игрока не обновилась проверкой датчиков');
+    if (who === 'Ира') { await shot('31-duel-mid'); await js('document.querySelector("#duNext").click()'); await sleep(600); }
+  }
+  if (!(await js(`/побеждает|Ничья/.test(document.body.innerText)`))) throw new Error("нет итога дуэли");
+  await shot('32-duel-result');
+  if ((await js('S.history.length')) !== hist0 || (await js('S.profile.xp')) !== xp0) throw new Error('ходы дуэли попали в статистику владельца');
+  if ((await js('Board.rows().length')) !== 2) throw new Error('нет рейтинга игроков');
+  await js('App.go("duel", {}, { force: true })'); await sleep(300);
+  if ((await js('Board.rows().reduce((a, p) => a + p.games, 0)')) !== 2) throw new Error('перерисовка задвоила рейтинг');
+  await js('App.go("games", {}, { fade: true })'); await sleep(500);
+});
+await step('Таблица клуба: relay в локальной сети принимает результат недели, кириллица не искажается', async () => {
+  const port = 18000 + Math.floor(Math.random() * 1000);
+  const relay = spawn(process.execPath, [root + '/tools/relay.mjs', String(port)], { stdio: 'ignore' });
+  try {
+    await sleep(900);
+    await js(`C().club = "http://127.0.0.1:${port}"; S.profile.name = "Алексей Ёжиков"; save(true)`);
+    await js('(() => { const c = Weekly.cur(); App.go("play", { id: c.id, diff: c.lv, weekly: true }); })()'); await sleep(900);
+    await js(`SCR.play.begin(App.cur.el); ${BOT}`); await sleep(2500); await js(`${STOP} SCR.play.finish()`); await sleep(1500);
+    const wk = await js('Weekly.cur().k'), got = await (await fetch(`http://127.0.0.1:${port}/board?week=${wk}`)).json();
+    if (!got.rows?.some(x => x.name === 'Алексей Ёжиков')) throw new Error('результат не дошёл или имя искажено: ' + JSON.stringify(got).slice(0, 200));
+    await js('App.go("games", {}, { fade: true })'); await sleep(600); await js('document.querySelector("[data-weekly]").click()'); await sleep(1500);
+    if (!(await js('document.querySelector("#wClub").innerText.includes("Алексей Ёжиков (вы)")'))) throw new Error('таблица клуба не показана в испытании недели');
+    await shot('33-club-board');
+    await js('document.querySelectorAll(".sheet").forEach(s => s.close?.()); C().club = ""; save(true)'); await sleep(400);
+  } finally { relay.kill(); }
 });
 report();

@@ -154,6 +154,7 @@ class RaceGame {
     this.offT = 0; this.crash = 0; this.shake = 0; this.crystals = 0; this.hits = 0; this.sky = 0; this.cleanDist = 0; this.clean1k = false; this.dist = 0; this.actT = 0;
     // призрак: лучший финиш этого уровня — дистанция и положение на дороге каждые 0.25 с
     this.gKey = Number.isInteger(lv) && lv <= 3 ? String(lv) : 'endless';
+    this.guest = typeof SCR !== 'undefined' && !!SCR.play?.p?.duel; // ход гостя в дуэли — призрака владельца не перезаписываем
     this.ghost = S.games?.race?.ghost?.[this.gKey] || null; this.trk = { d: [], x: [] }; this.trkT = 0;
     this.build();
   }
@@ -284,7 +285,7 @@ class RaceGame {
     // точность — удержание трассы, но только при реальном рулении: до 8 с активного управления она пропорционально снижается
     const acc = clamp(1 - this.offT / Math.max(1, this.T) - this.hits * .05) * (this.finished ? 1 : .85) * (.3 + .7 * clamp(this.actT / 8));
     let ghostRow = null;
-    if (this.finished) {
+    if (this.finished && !this.guest) {
       const st = S.games.race ||= { best: 0, plays: 0, stars: 0 }, gs = st.ghost ||= {}, old = gs[this.gKey];
       if (!old || this.finAt < old.T) { gs[this.gKey] = { T: +this.finAt.toFixed(2), d: this.trk.d, x: this.trk.x, at: Date.now() }; ghostRow = ['Призрак', old ? `новый: быстрее на ${(old.T - this.finAt).toFixed(1)} с` : 'записан — обгони его в следующий раз']; }
       else ghostRow = ['Призрак', `медленнее на ${(this.finAt - old.T).toFixed(1)} с`];

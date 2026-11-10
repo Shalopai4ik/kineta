@@ -25,7 +25,7 @@ export async function launch() {
   const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  let id = 0; const pending = new Map(), errors = [], dialogs = [];
+  let id = 0; const pending = new Map(), errors = [], dialogs = [], subs = {};
   const cdp = (method, params = {}) => new Promise((r, j) => { const i = ++id; pending.set(i, { r, j }); ws.send(JSON.stringify({ id: i, method, params })); });
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
@@ -33,6 +33,7 @@ export async function launch() {
     if (m.method === 'Runtime.exceptionThrown') { const d = m.params.exceptionDetails; errors.push('exception: ' + (d.exception?.description || d.text) + (d.url ? ` @ ${d.url.split('/').pop()}:${d.lineNumber + 1}` : '')); }
     if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errors.push('console.error: ' + m.params.args.map(a => a.value ?? a.description).join(' '));
     if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error' && !/favicon/.test(m.params.entry.url || '')) errors.push('log: ' + m.params.entry.text + ' ' + (m.params.entry.url || ''));
+    if (m.method && subs[m.method]) for (const f of subs[m.method]) f(m.params);
     if (m.method === 'Page.javascriptDialogOpening') { dialogs.push(m.params.message); cdp('Page.handleJavaScriptDialog', { accept: false }).catch(() => { }); }
   };
   const js = async expr => { const r = await cdp('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(expr.slice(0, 80) + ' → ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text)); return r.result.value; };
@@ -56,7 +57,8 @@ export async function launch() {
     console.log(`\n${results.filter(r => r[0] === 'PASS').length}/${results.length} сценариев, ошибок: ${errors.length}. Скриншоты: ${out}`);
     if (errors.length) { console.log(errors.slice(0, 40).join('\n')); process.exitCode = 1; }
   };
-  return { base, cdp, js, shot, size, go, tap, key, step, results, errors, report };
+  const on = (method, f) => (subs[method] ||= []).push(f); // подписка на события DevTools (кадры скринкаста)
+  return { base, cdp, js, shot, size, go, tap, key, step, results, errors, report, on, close };
 }
 
 /* бот-«мышцы»: циклы К1 → покой → К2 → покой по 0.7 с */

@@ -22,6 +22,8 @@ addEventListener('keydown', e => {
   }
 });
 addEventListener('keyup', e => { if (e.code in KEYMAP) Intent.keys[KEYMAP[e.code]] = false; if (e.code in GKEYS) Intent.gKeys[GKEYS[e.code]] = false; });
+addEventListener('gamepadconnected', e => { toast('game', 'Джойстик подключён', 'LT — К1, RT — К2: сила по нажатию курка · A / B — кнопками'); Snd.init(); });
+addEventListener('gamepaddisconnected', () => toast('game', 'Джойстик отключён'));
 addEventListener('blur', () => { Intent.keys = [false, false]; Intent.pad = [null, null]; Intent.gKeys = {}; });
 
 /* ---------------- Панель эмулятора (десктоп) ---------------- */

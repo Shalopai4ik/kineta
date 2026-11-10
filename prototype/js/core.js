@@ -21,7 +21,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const easeOut = t => 1 - Math.pow(1 - t, 3);
 /* квантиль выборки (0.5 — медиана, 0.9 — 90-й перцентиль); пустая выборка — 0 */
 const quantile = (a, q) => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * q))]; };
-const APP_VERSION = '3.4.0';
+const APP_VERSION = '3.5.0';
 
 /* ---------------- Шина событий ---------------- */
 const Bus = {
@@ -73,7 +73,7 @@ const DEF = {
     sound: true, vibro: true, voice: false, mirror: false, theme: 'light',
     // theme: 'light' | 'dark' | 'auto' (как в системе); handPal — цвет руки протеза; big — крупный режим;
     // shapes — формы каналов (К1 круг, К2 квадрат) для различения без цвета; quickCal — проверка датчиков перед игрой
-    handPal: 'titan', big: false, shapes: true, quickCal: true,
+    handPal: 'titan', big: false, shapes: true, quickCal: true, club: '', // club — адрес общей таблицы клуба (tools/relay.mjs в локальной сети)
     ble: { namePrefix: '', service: '', emgChar: '', cmdChar: '', format: 'u16le2', fullScale: 4095 },
     emu: { noise: .03, crosstalk: .06, rise: 1.8, fall: 3.0, jMin: 10, jMax: 110, loss: .05, burst: .01, misclass: .04 }
   },
@@ -82,7 +82,8 @@ const DEF = {
   gestures: null, rotation: ['natural', 'fist', 'pinch', 'point'], activeId: 'natural',
   stats: { days: {}, gestTotal: {}, seeded: false },
   games: {}, history: [], ach: {}, demo: null,
-  workshop: { parts: 0, built: 0, log: [] }, weekly: {}
+  workshop: { parts: 0, built: 0, log: [] }, weekly: {},
+  story: { seen: {}, done: {} }, board: { players: {} } // сюжет и рейтинг игроков на этом телефоне (js/story.js)
 };
 /* слияние сохранения / настроек поверх значений по умолчанию.
    Защита: ключи __proto__/constructor/prototype пропускаются (загрязнение прототипа через postMessage или localStorage),
@@ -124,6 +125,13 @@ function sanitize() {
   for (const [wk, w] of Object.entries(S.weekly)) if (!isObj(w) || !Array.isArray(w.tries)) delete S.weekly[wk];
   const w = S.workshop; w.parts = clamp(Math.round(w.parts), 0, 7); w.built = Math.max(0, Math.round(w.built));
   for (const [id, t] of Object.entries(S.ach)) if (!Number.isFinite(t)) delete S.ach[id];
+  for (const k of ['seen', 'done']) { if (!isObj(S.story[k])) S.story[k] = {}; for (const [id, t] of Object.entries(S.story[k])) if (!Number.isFinite(t)) delete S.story[k][id]; }
+  for (const [n, p] of Object.entries(S.board.players)) {
+    if (!isObj(p) || n.length > 20) { delete S.board.players[n]; continue; }
+    p.games = Math.max(0, Math.round(finite(p.games, 0))); p.wins = clamp(Math.round(finite(p.wins, 0)), 0, p.games);
+    if (!isObj(p.best)) p.best = {}; for (const [g, v] of Object.entries(p.best)) if (!Number.isFinite(v)) delete p.best[g];
+    p.pur = Array.isArray(p.pur) ? p.pur.filter(Number.isFinite).slice(-20) : [];
+  }
   if (typeof S.profile.name !== 'string' || !S.profile.name.trim()) S.profile.name = DEF.profile.name;
   S.profile.name = S.profile.name.slice(0, 40);
 }
@@ -314,18 +322,33 @@ const Intent = {
     if (this.id) return; this.last = performance.now();
     this.id = setInterval(() => {
       const now = performance.now(), dt = Math.min(.05, (now - this.last) / 1000), e = C().emu; this.last = now;
+      this.pollGamepad();
       for (let i = 0; i < 2; i++) {
-        const p = this.pad[i], a = this.auto?.[i];
+        const p = this.pad[i], a = this.auto?.[i], j = this.gp?.[i];
         if (p != null) this.lvl[i] += (p - this.lvl[i]) * Math.min(1, dt / .04);
         else if (a != null) this.lvl[i] += (a - this.lvl[i]) * Math.min(1, dt / .06);
+        else if (j != null) this.lvl[i] += (j - this.lvl[i]) * Math.min(1, dt / .04); // джойстик: сила = нажатие курка
         else if (this.keys[i]) this.lvl[i] = Math.min(1, this.lvl[i] + e.rise * dt);
         else this.lvl[i] = Math.max(0, this.lvl[i] - e.fall * dt);
       }
       // дополнительный жест СПППР (пронация, супинация, приведение, отведение)
-      const want = this.gAuto || SP_KEYS.find(k => this.gKeys[k]) || null;
+      const want = this.gAuto || SP_KEYS.find(k => this.gKeys[k]) || this.gpG || null;
       if (want) { if (want !== this.g) { this.g = want; this.gl = Math.min(this.gl, .2); } this.gl = Math.min(1, this.gl + e.rise * 1.4 * dt); }
       else { this.gl = Math.max(0, this.gl - e.fall * dt); if (!this.gl) this.g = null; }
     }, 5);
+  },
+  /* Джойстик (ТЗ: эмулятор кнопок/слайдеров — клавиатура, мышь, джойстик), стандартная раскладка Gamepad API:
+     LT / RT — К1 / К2 пропорционально нажатию, A / B и LB / RB — К1 / К2 целиком,
+     крестовина — жесты СПППР: ↑ супинация, ↓ пронация, ← приведение, → отведение. */
+  gp: null, gpG: null,
+  pollGamepad() {
+    const list = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null;
+    const g = list && [...list].find(x => x && x.connected); if (!g) { this.gp = this.gpG = null; return; }
+    const b = k => g.buttons[k] ? (typeof g.buttons[k].value === 'number' ? g.buttons[k].value : g.buttons[k].pressed ? 1 : 0) : 0;
+    const v = [Math.max(b(6), b(0), b(4)), Math.max(b(7), b(1), b(5))].map(x => x < .05 ? 0 : clamp(x));
+    this.gp = v[0] || v[1] ? v : (this.gp ? [0, 0] : null); // отпустили курки — плавно к нулю, потом управление отдаётся клавишам
+    if (this.gp && !this.gp[0] && !this.gp[1] && this.lvl[0] < .01 && this.lvl[1] < .01) this.gp = null;
+    this.gpG = b(12) > .5 ? 'supination' : b(13) > .5 ? 'pronation' : b(14) > .5 ? 'adduction' : b(15) > .5 ? 'abduction' : null;
   },
   /* имитация обрыва связи: источник молчит ms миллисекунд (проверка инерции и критической потери) */
   drop(ms = 2500) { this.dropUntil = performance.now() + ms; }
