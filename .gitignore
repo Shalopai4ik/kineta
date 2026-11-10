@@ -27,3 +27,4 @@ Thumbs.db
 .idea/
 .vscode/
 prototype/tools/board.json
+!docs/media/*.mp4
