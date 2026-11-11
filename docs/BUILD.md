@@ -42,6 +42,7 @@ npm run test:e2e                 # свежие кадры игры (tests/e2e/o
 npm --prefix tools/docs install  # docx, mammoth
 node tools/docs/presentation.mjs # → docs/Kineta-presentation.pdf (HTML-слайды → PDF в headless Chrome)
 node tools/docs/docs.mjs         # → docs/Kineta-technical-documentation.docx, docs/Kineta-AI-report.docx
+node tools/docs/presentation-v2.mjs && node tools/docs/docs-v2.mjs   # вариант 2.0: строгая презентация, DOCX в деловом формате (Times New Roman, нумерованные разделы)
 node tools/docs/preview.mjs docs/Kineta-AI-report.docx   # предпросмотр без Word: объём, таблицы, картинки
 ```
 
